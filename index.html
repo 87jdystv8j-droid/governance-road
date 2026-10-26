@@ -5099,7 +5099,10 @@ TASK.init = function (g, level) {
   const n = level <= 1 ? 4 : level <= 4 ? 5 : level <= 6 ? 4 : 3;
   const list = pool.slice().sort(() => Math.random() - 0.5).slice(0, Math.min(n, pool.length));
   p.tasks = list.map((t, i) => ({
-    id: i, key: t.k, name: t.n, need: t.need, done: 0, unit: t.unit,
+    id: i, key: t.k,
+    /* 把模板里的 N 替换成实际数字 */
+    name: String(t.n).replace(/N/g, String(t.need)),
+    need: t.need, done: 0, unit: t.unit,
     ap: t.ap, reward: Object.assign({}, t.reward), desc: t.desc || '',
   }));
   p.tasksLevel = level;
@@ -5336,23 +5339,23 @@ window.__EXAM = FAVOR.QUESTIONS;
     return `<div class="card">
       <div class="ch"><span class="ic orange">务</span><h3>工作任务</h3>
         <span class="tail">${all ? '✅ 全部完成' : Math.round(TASK.progress(g) * 100) + '%'}</span></div>
-      <p class="sm dim" style="margin:0 0 10px">干出成绩才能晋升。每点一次花对应行动点。</p>
+      <p class="sm dim" style="margin:0 0 8px;font-size:10.5px">全部做完才能提拔</p>
       ${p.tasks.map(t => {
         const done = t.done >= t.need;
         const pct = Math.min(100, t.done / t.need * 100);
         return `<div style="border:1px solid ${done ? '#9fc4a9' : 'var(--line)'};
-          background:${done ? '#f2f9f4' : '#fffdfa'};border-radius:10px;padding:9px 12px;margin-bottom:8px">
-          <div style="display:flex;align-items:baseline;gap:8px">
-            <b style="font-size:13px;color:${done ? '#3f7d5c' : '#5b3b6f'}">${t.name.replace('N', t.need)}</b>
-            <span class="sm dim">${t.ap} 点/次</span>
-            <span style="margin-left:auto;font-variant-numeric:tabular-nums;color:${done ? '#3f7d5c' : '#8a6a33'}">
-              ${t.done} / ${t.need} ${t.unit}</span>
+          background:${done ? '#f2f9f4' : '#fffdfa'};border-radius:9px;padding:7px 10px;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <b style="font-size:12.5px;color:${done ? '#3f7d5c' : '#5b3b6f'};flex:none">${t.name}</b>
+            <span style="flex:1;height:5px;background:#efe8dc;border-radius:3px;overflow:hidden">
+              <i style="display:block;height:100%;width:${pct}%;background:${done ? '#4a8c5c' : 'linear-gradient(90deg,#c99a5b,#8a6a33)'}"></i>
+            </span>
+            <span style="font-size:11px;font-variant-numeric:tabular-nums;color:${done ? '#3f7d5c' : '#8a6a33'};flex:none;min-width:56px;text-align:right">${t.done}/${t.need} ${t.unit}</span>
+            ${done ? '<span style="font-size:10px;color:#3f7d5c;flex:none">✓</span>'
+              : `<button class="btn sm ${(p.ap || 0) >= t.ap ? 'primary' : ''}" data-task="${t.id}" style="flex:none;padding:2px 10px;font-size:11px"
+                  ${(p.ap || 0) < t.ap ? 'disabled' : ''}>${t.ap}点</button>`}
           </div>
-          <div class="prog" style="margin:6px 0"><i style="width:${pct}%;background:${done ? '#4a8c5c' : 'linear-gradient(90deg,#c99a5b,#8a6a33)'}"></i></div>
-          ${done ? '<span class="tag" style="background:#e6f2e9;color:#3f7d5c">已完成</span>'
-            : `<button class="btn sm ${(p.ap || 0) >= t.ap ? 'primary' : ''}" data-task="${t.id}"
-                ${(p.ap || 0) < t.ap ? 'disabled' : ''}>执行</button>`}
-          ${t.desc ? `<span class="sm dim" style="margin-left:8px">${t.desc}</span>` : ''}
+          ${t.desc ? `<div style="font-size:9.5px;color:#a89878;margin-top:2px">${t.desc}</div>` : ''}
         </div>`;
       }).join('')}
       ${all ? `<p class="sm" style="margin:6px 0 0;color:#3f7d5c">任务全部完成，可以去申请提拔了。</p>` : ''}
@@ -5402,13 +5405,13 @@ window.__EXAM = FAVOR.QUESTIONS;
       <div class="ch"><span class="ic">情</span><h3>人情往来</h3>
         <span class="tail">领导好感最高 ${Math.max(...leaders.map(x => x.favor))}</span></div>
 
-      <div class="sm dim" style="margin:0 0 8px">给领导送礼，好感上去能破格提拔（需好感 ≥ 80）。</div>
+      <div class="sm dim" style="margin:0 0 8px">给领导送礼，好感上去能破格提拔（需好感 ≥ 70）。</div>
       ${leaders.map(L => `<div style="border:1px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:8px;background:#fffdfa">
         <div style="display:flex;align-items:baseline;gap:8px">
           <b style="font-size:13px">${L.name}</b><span class="tag">${L.title}</span>
-          <span style="margin-left:auto;color:${L.favor >= 80 ? '#a5463e' : 'var(--plum)'};font-weight:700">好感 ${L.favor}</span>
+          <span style="margin-left:auto;color:${L.favor >= 70 ? '#a5463e' : 'var(--plum)'};font-weight:700">好感 ${L.favor}</span>
         </div>
-        <div class="prog" style="margin:5px 0 6px"><i style="width:${L.favor}%;background:${L.favor >= 80 ? 'linear-gradient(90deg,#c96b5b,#a5463e)' : 'linear-gradient(90deg,#9a79bd,#5b3b6f)'}"></i></div>
+        <div class="prog" style="margin:5px 0 6px"><i style="width:${L.favor}%;background:${L.favor >= 70 ? 'linear-gradient(90deg,#c96b5b,#a5463e)' : 'linear-gradient(90deg,#9a79bd,#5b3b6f)'}"></i></div>
         <div style="display:flex;flex-wrap:wrap;gap:4px">
           ${FAVOR.GIFTS.map(gf => `<button class="btn sm" data-gift="${L.id}:${gf.key}"
             ${p.netWorth < gf.cost ? 'disabled' : ''} title="${gf.desc}">${gf.name}<span class="sm dim"> ${gf.cost}万</span></button>`).join('')}
@@ -10462,7 +10465,7 @@ function seededRand(str) {
       examScore: 0, examGrade: '—',
       position: null, tenure: 0, career: 0, perf: 0, examPts: 50.6, exp: 20,
       ap: 5, apMax: 5, months: 0, part: 1, history: [],
-      mentorTrain: 0, energy: 100, netWorth: 8.5, garage: [], carSeq: 0,
+      mentorTrain: 0, energy: 100, netWorth: 25, garage: [], carSeq: 0,
     spouse: null, family: null, lastPay: null, salaryLog: [],
     house: null, houseName: null, exposure: 0,
       evalYears: [],
@@ -10503,12 +10506,21 @@ function seededRand(str) {
   /* ================= 动态 ================= */
   function seedNews() {
     G.news = [];
-    for (let i = 0; i < 8; i++) addNews(FY.NEWS_TPL[i % FY.NEWS_TPL.length]
-      .replace('{name}', pick(FY.SURNAMES) + pick(FY.GIVEN))
-      .replace('{item}', pick(FY.NEWS_ITEMS))
-      .replace('{score}', irnd(60, 95))
-      .replace('{sec}', pick(['综合科','办公室','业务一科']))
-      .replace('{n}', irnd(3, 9)));
+    /* 开局前 position 还没定，从 G.post 取籍贯 */
+    const pos0 = (G.player && G.player.position) || {};
+    const post0 = G.post || {};
+    const areaName = pos0.county || pos0.city || post0.area || post0.city || post0.province || '本区';
+    for (let i = 0; i < 8; i++) {
+      let t = FY.NEWS_TPL[i % FY.NEWS_TPL.length];
+      /* 逐个替换所有占位符（全局，避免漏替换） */
+      t = t.split('{name}').join(pick(FY.SURNAMES) + pick(FY.GIVEN));
+      t = t.split('{item}').join(pick(FY.NEWS_ITEMS));
+      t = t.split('{score}').join(String(irnd(60, 95)));
+      t = t.split('{sec}').join(pick(['综合科', '办公室', '业务一科', '组织人事科', '综合执法科']));
+      t = t.split('{n}').join(String(irnd(3, 9)));
+      t = t.split('{area}').join(areaName);
+      addNews(t);
+    }
   }
   function addNews(t) {
     G.news.unshift({ t, date: `${G.year}/${G.month}/${G.day}` });
@@ -10837,7 +10849,10 @@ function seededRand(str) {
     const full = `${G.post.province}·${G.post.city}·${G.post.area}·${s.org}${s.sub ? '·' + s.sub : ''}·${s.sec}`;
     if (window.AP) AP.push(G, '任', p.name, '待分配', s.org + '·' + s.sec + '·科员', 'self');
     p.history.push(`${G.year}年${G.month}月 · 就任 ${full} · 一级科员`);
-    addNews(`你到 ${G.post.area}·${s.org}·${s.sec} 报到，任一级科员。`);
+    /* 科室名与机构名重复时只显示一次 */
+    const orgClean = String(s.org || '').replace(/（[^）]*）/g, '');
+    const secShow = (s.sec === s.org || s.sec === orgClean) ? '' : '·' + s.sec;
+    addNews(`你到 ${G.post.area}·${s.org}${secShow} 报到，任一级科员。`);
     save();
     $('#setup').classList.add('hidden');
     $('#takeBar').classList.add('hidden');
