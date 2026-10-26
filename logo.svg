@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- 印章渐变 -->
+    <linearGradient id="sealBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8b2e3c"/>
+      <stop offset="55%" stop-color="#6b1f2b"/>
+      <stop offset="100%" stop-color="#4a1420"/>
+    </linearGradient>
+    <!-- 金边 -->
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4d98a"/>
+      <stop offset="45%" stop-color="#d9b45e"/>
+      <stop offset="100%" stop-color="#b08a3c"/>
+    </linearGradient>
+    <!-- 高光 -->
+    <radialGradient id="gloss" cx="0.3" cy="0.2" r="0.75">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 阴影 -->
+    <filter id="soft" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#2b0a12" flood-opacity="0.45"/>
+    </filter>
+    <filter id="inner" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feComposite in="SourceGraphic" in2="b" operator="out" result="o"/>
+      <feColorMatrix in="o" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.35 0"/>
+    </filter>
+  </defs>
+
+  <!-- 外圈金环 -->
+  <circle cx="256" cy="256" r="244" fill="url(#gold)" filter="url(#soft)"/>
+  <circle cx="256" cy="256" r="232" fill="url(#sealBg)"/>
+  <circle cx="256" cy="256" r="232" fill="url(#gloss)"/>
+
+  <!-- 内圈细金线 -->
+  <circle cx="256" cy="256" r="206" fill="none" stroke="url(#gold)" stroke-width="2.5" stroke-opacity="0.75"/>
+  <circle cx="256" cy="256" r="192" fill="none" stroke="#f4d98a" stroke-width="1" stroke-opacity="0.28"/>
+
+  <!-- 印面暗纹：九宫格角标（权力的格子） -->
+  <g stroke="#f4d98a" stroke-opacity="0.14" stroke-width="1.6" fill="none">
+    <rect x="150" y="150" width="212" height="212" rx="10"/>
+    <line x1="256" y1="150" x2="256" y2="362"/>
+    <line x1="150" y1="256" x2="362" y2="256"/>
+  </g>
+
+  <!-- 主图形：阶梯（仕途 / 步步高升） -->
+  <g fill="url(#gold)">
+    <rect x="176" y="316" width="42" height="46" rx="4"/>
+    <rect x="228" y="276" width="42" height="86" rx="4"/>
+    <rect x="280" y="232" width="42" height="130" rx="4"/>
+  </g>
+
+  <!-- 顶端星徽（顶点 / 顶戴） -->
+  <g transform="translate(301,196)">
+    <path d="M0,-30 L9.5,-9.5 L31,-9.5 L14,3.5 L20.5,25 L0,12.5 L-20.5,25 L-14,3.5 L-31,-9.5 L-9.5,-9.5 Z"
+          fill="url(#gold)" opacity="0.98"/>
+    <circle cx="0" cy="0" r="5" fill="#6b1f2b" opacity="0.9"/>
+  </g>
+
+  <!-- 底部横线：定盘 -->
+  <rect x="164" y="374" width="184" height="5" rx="2.5" fill="url(#gold)" opacity="0.9"/>
+
+  <!-- 环形文字：治理者之路 -->
+  <defs>
+    <path id="arcTop" d="M 256,256 m -168,0 a 168,168 0 1,1 336,0" fill="none"/>
+    <path id="arcBottom" d="M 256,256 m -168,0 a 168,168 0 1,0 336,0" fill="none"/>
+  </defs>
+  <text font-family="'Songti SC','STSong','SimSun',serif" font-size="27" fill="#f4d98a" letter-spacing="12" opacity="0.92">
+    <textPath href="#arcTop" startOffset="50%" text-anchor="middle">治理者之路</textPath>
+  </text>
+  <text font-family="'Helvetica Neue',Arial,sans-serif" font-size="13.5" fill="#f4d98a" letter-spacing="5.5" opacity="0.72">
+    <textPath href="#arcBottom" startOffset="50%" text-anchor="middle">ROAD OF GOVERNANCE</textPath>
+  </text>
+</svg>
