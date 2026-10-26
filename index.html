@@ -467,7 +467,7 @@
       <div class="brand"><b>治理者之路</b><span>q群112486331</span></div>
       <nav class="navs" id="navs"></nav>
       <div class="topRight">
-        <span class="ap" id="apLabel">行动点 5/5</span>
+        <span class="ap" id="apLabel">行动点 6/6</span>
         <span id="dateLabel">2024年1月1日 星期一</span>
         <span class="seed" id="seedLabel">种子 00000000</span>
         <span id="navUser" style="font-size:10.5px;color:#8a7f8f;padding:0 4px"></span>
@@ -3602,7 +3602,7 @@ FY.randomProvince = function (rnd) {
     h += SEC('①', '开局：入仕', 
       KV('起点', '科员（一级科员）') +
       KV('分配', '按户籍/志愿分到省·市·县·部门·科室') +
-      KV('初始', Y('行动点 5/周') + ' · 考察分 50.6 · 净资产 3 万 · 风险 10') +
+      KV('初始', Y('行动点 6/周') + ' · 考察分 50.6 · 净资产 25 万 · 风险 0') +
       '<div style="margin-top:6px;color:#8a8a94;font-size:10.5px">' +
         '开局只选姓名、性别、学历、专业、籍贯，不考公务员考试。' +
       '</div>'
@@ -3610,7 +3610,7 @@ FY.randomProvince = function (rnd) {
 
     /* 二、核心循环 */
     h += SEC('②', '核心循环：行动点 → 走动 → 推进一周',
-      '每周 ' + Y('5 点') + ' 行动点（正科以上更多），所有操作都花点。用完点「推进一周」结算，时间 +1 周，行动点重置。' +
+      '每周 ' + Y('6 点') + ' 行动点（正科以上更多），所有操作都花点。用完点「推进一周」结算，时间 +1 周，行动点重置。' +
       '<div style="margin-top:6px">' +
         KV('主动汇报', '1 点 · 考察分 +3 · 上级好感 +2') +
         KV('请示大事', '1 点 · 考察分 +2 · 上级好感 +1') +
@@ -11154,7 +11154,7 @@ function seededRand(str) {
       rank: '科员', rankId: '一级科员', stage: 0,
       examScore: 0, examGrade: '—',
       position: null, tenure: 0, career: 0, perf: 0, examPts: 50.6, exp: 20,
-      ap: 5, apMax: 5, months: 0, part: 1, history: [],
+      ap: 6, apMax: 6, months: 0, part: 1, history: [],
       mentorTrain: 0, energy: 100, netWorth: 25, garage: [], carSeq: 0, projects: [], projLog: [],
     spouse: null, family: null, lastPay: null, salaryLog: [],
     house: null, houseName: null, exposure: 0,
