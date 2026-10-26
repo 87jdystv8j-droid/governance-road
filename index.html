@@ -416,6 +416,25 @@
     .blBox h2 { font-size: 18px; letter-spacing: 6px; }
   }
 
+
+  /* ===== 开局面板手机优化 ===== */
+  @media (max-width: 480px) {
+    #setupBody .card { padding: 12px !important; }
+    /* 「起点能力/执行力/可报岗位」这一行改为两列 */
+    #setupBody div[style*="display:flex"][style*="gap:18px"],
+    #setupBody div[style*="display:flex"][style*="gap:16px"] {
+      flex-wrap: wrap !important;
+      gap: 10px 14px !important;
+    }
+    #setupBody div[style*="display:flex"] > div[style*="flex:1"] { flex: 1 1 45% !important; min-width: 120px; }
+    /* 表单行：标签与控件上下排 */
+    #setupBody .row2 { grid-template-columns: 1fr !important; }
+    /* 学历/性别按钮换行 */
+    #setupBody .chips { flex-wrap: wrap !important; }
+    /* 主按钮全宽 */
+    #setupBody .btn.primary.wide { width: 100%; }
+  }
+
 </style>
 </head>
 <body>
@@ -8013,15 +8032,56 @@ window.__EXAM = FAVOR.QUESTIONS;
       (x.rel === 'up' || x.rel === 'peer') && x.note && x.note.indexOf('常委') >= 0);
     const pool = voters.length ? voters : rs.list.filter(x => x.rel === 'up' || x.rel === 'peer');
     if (!pool.length) return { need: false, pass: true, detail: [], yes: 0, total: 0 };
+
+    /* 玩家派系（从组织架构拿自己席位上的 faction） */
+    const myFaction = (function () {
+      try {
+        if (window.FX && FX.myFaction) {
+          const r = FX.myFaction(g);
+          if (r) return typeof r === 'string' ? r : (r.k || r.name || '');
+        }
+      } catch (e) {}
+      return (g.player && g.player.faction) || '无派系';
+    })();
+
     const detail = pool.map(v => {
       const isBoss = /书记$|省长$|市长$/.test(v.title);
       const w = isBoss ? 2 : 1;
-      const yes = Math.random() < cl(v.favor / 100 + (isBoss ? 0.05 : 0), 0.05, 0.95);
-      return { name: v.name, title: v.title, favor: Math.round(v.favor), yes, w };
+
+      /* 派系加成：同派系 +15%，对立派系 -10% */
+      const vf = v.faction || '无派系';
+      let factionBonus = 0;
+      let factionTag = '';
+      if (myFaction && myFaction !== '无派系' && vf !== '无派系') {
+        if (vf === myFaction) {
+          factionBonus = 0.15;
+          factionTag = '同派系';
+        } else if (PL.FACTION_RIVAL && PL.FACTION_RIVAL[myFaction] === vf) {
+          factionBonus = -0.10;
+          factionTag = '对立派系';
+        }
+      }
+
+      const rate = cl(v.favor / 100 + (isBoss ? 0.05 : 0) + factionBonus, 0.05, 0.95);
+      const yes = Math.random() < rate;
+      return {
+        name: v.name, title: v.title, favor: Math.round(v.favor), yes, w,
+        faction: vf, factionTag, rate: Math.round(rate * 100),
+      };
     });
     const yesW = detail.filter(d => d.yes).reduce((a, b) => a + b.w, 0);
     const totW = detail.reduce((a, b) => a + b.w, 0);
-    return { need: true, pass: yesW / totW >= 0.5, yes: yesW, total: totW, detail };
+    return { need: true, pass: yesW / totW >= 0.5, yes: yesW, total: totW, detail, myFaction };
+  };
+
+  /* 派系对立关系表 */
+  PL.FACTION_RIVAL = {
+    '学院派':   '军转干部',
+    '军转干部': '学院派',
+    '组织系统': '改革派',
+    '改革派':   '组织系统',
+    '本地派':   '技术官僚',
+    '技术官僚': '本地派',
   };
 
   /* ---------------- 执行 ---------------- */
@@ -8274,17 +8334,32 @@ window.__EXAM = FAVOR.QUESTIONS;
 
   window.renderVoteResult = function (vote) {
     if (!vote) return '';
+    const myF = vote.myFaction && vote.myFaction !== '无派系' ? vote.myFaction : null;
     return '<div style="text-align:center;padding:6px 0 12px">' +
       '<div style="font-size:24px;font-weight:700;color:' + (vote.pass ? '#3f7d5c' : '#a5463e') + '">' +
       (vote.pass ? '表决通过' : '表决未通过') + '</div>' +
-      '<div class="sm dim">同意 ' + vote.yes + ' / ' + vote.total + ' 票</div></div>' +
-      vote.detail.map(d =>
-        '<div style="display:flex;align-items:center;gap:7px;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
-        '<span style="width:18px;height:18px;border-radius:5px;background:' + (d.yes ? '#e6f2e9' : '#fbe6e4') + ';' +
-          'color:' + (d.yes ? '#3f7d5c' : '#a5463e') + ';display:grid;place-items:center;font-size:10px">' + (d.yes ? '✓' : '✕') + '</span>' +
-        '<span style="font-weight:600">' + d.name + '</span>' +
-        '<span class="sm dim">' + d.title + '</span>' +
-        '<span class="sm dim" style="margin-left:auto">好感 ' + d.favor + '</span></div>').join('');
+      '<div class="sm dim">同意 ' + vote.yes + ' / ' + vote.total + ' 票</div>' +
+      (myF ? '<div class="sm" style="margin-top:5px;color:#6b477f">你的派系：' + myF +
+        ' <span class="sm dim">（同派系 +15%，对立派系 −10%）</span></div>' : '') +
+      '</div>' +
+      vote.detail.map(d => {
+        let ft = '';
+        if (d.factionTag === '同派系') {
+          ft = '<span style="font-size:9.5px;padding:1px 5px;border-radius:4px;background:#e6f2e9;color:#3f7d5c">' + (d.faction || '同派系') + ' +15%</span>';
+        } else if (d.factionTag === '对立派系') {
+          ft = '<span style="font-size:9.5px;padding:1px 5px;border-radius:4px;background:#fbe6e4;color:#a5463e">' + (d.faction || '对立') + ' −10%</span>';
+        } else if (d.faction && d.faction !== '无派系') {
+          ft = '<span style="font-size:9.5px;padding:1px 5px;border-radius:4px;background:#f3edf8;color:#7a7186">' + d.faction + '</span>';
+        }
+        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+          '<span style="width:18px;height:18px;border-radius:5px;background:' + (d.yes ? '#e6f2e9' : '#fbe6e4') + ';' +
+            'color:' + (d.yes ? '#3f7d5c' : '#a5463e') + ';display:grid;place-items:center;font-size:10px;flex:none">' + (d.yes ? '✓' : '✕') + '</span>' +
+          '<span style="font-weight:600">' + d.name + '</span>' +
+          ft +
+          '<span class="sm dim" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + d.title + '</span>' +
+          '<span class="sm dim" style="margin-left:auto;flex:none">好感 ' + d.favor +
+            (d.rate != null ? ' · 通过率 ' + d.rate + '%' : '') + '</span></div>';
+      }).join('');
   };
 
   /* ---------------- 跑腿办事（任何职级都能做） ---------------- */
@@ -8626,6 +8701,46 @@ window.__EXAM = FAVOR.QUESTIONS;
   let openSet = {};
   let viewScope = null;   /* 用户手动切换的层级 */
 
+  /* 按科室名推断分管领域（没有 supervise 字段时用） */
+  window.guessSupervise = function (title, sec, org) {
+    const all = String(sec || '') + String(org || '') + String(title || '');
+    const MAP = [
+      [/组织|人事|编制|干部/, '干部人事、机构编制'],
+      [/宣传|新闻|舆情|文明/, '宣传教育、新闻舆论'],
+      [/统战|民族|宗教|侨务/, '统一战线、民族宗教'],
+      [/政法|综治|维稳|信访/, '政法综治、信访维稳'],
+      [/纪检|监察|巡察|党风/, '纪检监察、党风廉政'],
+      [/财政|税务|金融|审计/, '财政税收、金融审计'],
+      [/发改|计划|投资|项目/, '发改投资、重点项目'],
+      [/教育|学校|教学/, '教育工作'],
+      [/科技|创新|信息|数据/, '科技信息、数据管理'],
+      [/工业|工信|经济|商务|招商/, '工业经济、招商引资'],
+      [/公安|交警|治安/, '公安治安、交通管理'],
+      [/民政|救助|低保|养老|福利/, '民政救助、社会福利'],
+      [/司法|法制|法务/, '司法行政、法制建设'],
+      [/自然资源|国土|规划/, '自然资源、国土规划'],
+      [/生态|环境|环保/, '生态环境保护'],
+      [/住建|建设|房产|城建/, '城乡建设、房产管理'],
+      [/交通|公路|运输/, '交通运输'],
+      [/水利|水务|供水/, '水利水务'],
+      [/农业农村|扶贫|乡村振兴/, '农业农村、乡村振兴'],
+      [/文化|旅游|文物|体育/, '文化旅游、体育事业'],
+      [/卫生|医疗|健康|疾控/, '卫生健康、疾控医疗'],
+      [/退役军人/, '退役军人事务'],
+      [/应急|安全|消防/, '应急管理、安全生产'],
+      [/市场|工商|质监|食药/, '市场监管、食品药品'],
+      [/统计|调查/, '统计调查'],
+      [/医保/, '医疗保障'],
+      [/城管|市容|环卫/, '城市管理、市容环卫'],
+      [/林业|园林|绿化/, '林业园林、绿化'],
+      [/政务服务|审批|政务/, '政务服务、行政审批'],
+      [/办公室|综合|秘书|文秘/, '综合协调、文秘档案'],
+      [/档案|机要|保密/, '档案机要、保密工作'],
+    ];
+    for (const [re, label] of MAP) if (re.test(all)) return label;
+    return '';
+  };
+
   window.renderOrgPage = function (g) {
     const x = O.build(g);
     const st = O.stats(g);
@@ -8702,7 +8817,10 @@ window.__EXAM = FAVOR.QUESTIONS;
           '<div style="min-width:0">' +
             '<div style="font-size:12px;font-weight:600">' + pe.name + '</div>' +
             '<div style="font-size:10.5px;color:#5b3b6f;line-height:1.5">' + pe.title + '</div>' +
-            (pe.supervise ? '<div style="font-size:10px;color:#8a6a33;line-height:1.4">分管：' + pe.supervise + '</div>' : '') +
+            (function () {
+              const sup = pe.supervise || (window.guessSupervise ? window.guessSupervise(pe.title, c.title || c.name, s.org) : '');
+              return sup ? '<div style="font-size:10px;color:#8a6a33;line-height:1.4">分管：' + sup + '</div>' : '';
+            })() +
             '<div style="font-size:10px;color:#7a7186">' + pe.level + ' · ' + pe.age + '岁·' + pe.sex + '·' + pe.edu + '·' + pe.faction + '</div>' +
           '</div></div>';
       }).join('') + '</div>' : '';
@@ -9225,9 +9343,13 @@ window.__EXAM = FAVOR.QUESTIONS;
             return { t: ((county2 || '本区').replace(/(区|县|市)$/, '')) + (String(county2||'').endsWith('县') ? '县委书记' : '区委书记'), lv: 4, kind: 'county' };
           }
           /* 市人大主任 / 市政协主席 → 市委书记 */
-          if (/市人大常委会主任|市政协主席/.test(ftitle)) return { t: ((city2 || '本市').replace(/市$/, '')) + '市委书记', lv: 6, kind: 'city' };
-          /* 省人大主任 / 省政协主席 → 省委书记 */
-          if (/省人大常委会主任|省政协主席/.test(ftitle)) return { t: ((prov2 || '本省').replace(/省$/, '')) + '省委书记', lv: 9, kind: 'prov' };
+          if (/市人大常委会|市政协/.test(ftitle)) return { t: ((city2 || '本市').replace(/市$/, '')) + '市委书记', lv: 6, kind: 'city' };
+          if (/区人大常委会|区政协|县人大常委会|县政协/.test(ftitle)) return { t: ((county2 || '本区').replace(/(区|县|市)$/, '')) + (String(county2||'').endsWith('县') ? '县委书记' : '区委书记'), lv: 4, kind: 'county' };
+          /* 省人大 / 省政协（含副职）→ 省委书记 */
+          if (/省人大常委会/.test(ftitle)) return { t: ((prov2 || '本省').replace(/省$/, '')) + '省委书记', lv: 9, kind: 'prov' };
+          if (/省政协/.test(ftitle)) return { t: ((prov2 || '本省').replace(/省$/, '')) + '省委书记', lv: 9, kind: 'prov' };
+          /* 如为省委书记本人的副职（副书记），上级就是书记 */
+          if (/^省委副书记$/.test(ftitle)) return { t: ((prov2 || '本省').replace(/省$/, '')) + '省委书记', lv: 9, kind: 'prov' };
           /* 其他：按职级找同级的书记 */
           if (myLvNum >= 7) return { t: ((prov2 || '本省').replace(/省$/, '')) + '省委书记', lv: 9, kind: 'prov' };
           if (myLvNum >= 5) return { t: ((city2 || '本市').replace(/市$/, '')) + '市委书记', lv: 6, kind: 'city' };
@@ -9904,6 +10026,327 @@ window.__EXAM = FAVOR.QUESTIONS;
     });
     document.querySelectorAll('[data-gwsubmit]').forEach(e => e.onclick = () => {
       window.__toast && window.__toast('留言已提交，等待办理');
+    });
+  };
+})();
+</script>
+<script>/* ============================================================
+   治理者之路 · 招商引资 & 项目审批
+   完整流程：洽谈意向 → 立项 → 审批 → 开工 → 竣工投产
+   ============================================================ */
+(function () {
+  'use strict';
+  const PROJ = {};
+  window.PROJ = PROJ;
+
+  const rnd = () => Math.random();
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const fmt = n => {
+    if (n >= 1e8) return (n / 1e8).toFixed(1) + ' 亿';
+    if (n >= 1e4) return (n / 1e4).toFixed(0) + ' 万';
+    return String(Math.round(n));
+  };
+
+  /* ---------------- 产业类型 ---------------- */
+  PROJ.INDUSTRIES = [
+    { k: 'manufacture', n: '先进制造', ic: '⚙', inv: [2, 30], land: [50, 400], jobs: [300, 3000], tax: 0.06, risk: 12, gdpK: 1.4,
+      desc: '投资大、就业多、税收稳定，但环保压力也大' },
+    { k: 'digital',    n: '数字经济', ic: '◈', inv: [1, 15], land: [10, 80],  jobs: [80, 600],  tax: 0.10, risk: 5,  gdpK: 1.8,
+      desc: '轻资产、附加值高，最受上级欢迎' },
+    { k: 'bio',        n: '生物医药', ic: '❋', inv: [3, 25], land: [40, 250], jobs: [150, 1500], tax: 0.11, risk: 8, gdpK: 1.7,
+      desc: '周期长、门槛高，一旦落地就是政绩' },
+    { k: 'newenergy',  n: '新能源',   ic: '☀', inv: [5, 60], land: [200, 1200], jobs: [200, 2000], tax: 0.07, risk: 15, gdpK: 1.5,
+      desc: '用地需求极大，征地是难点' },
+    { k: 'logistics',  n: '现代物流', ic: '⇄', inv: [1, 12], land: [100, 500], jobs: [200, 1200], tax: 0.05, risk: 6, gdpK: 1.2,
+      desc: '见效快、风险低，但税收贡献一般' },
+    { k: 'culture',    n: '文旅产业', ic: '❖', inv: [1, 20], land: [80, 400], jobs: [100, 900], tax: 0.04, risk: 7, gdpK: 1.1,
+      desc: '带动消费和形象，见效慢' },
+    { k: 'agri',       n: '现代农业', ic: '✦', inv: [0.5, 8], land: [300, 2000], jobs: [100, 800], tax: 0.02, risk: 4, gdpK: 0.9,
+      desc: '税收低但是乡村振兴的硬指标' },
+  ];
+
+  /* ---------------- 企业名 ---------------- */
+  const CORP_PRE = ['华', '中', '恒', '宏', '泰', '瑞', '鼎', '鑫', '立', '远', '天', '光', '金', '新', '创'];
+  const CORP_MID = ['盛', '晟', '晟', '昌', '源', '通', '禾', '元', '拓', '越', '联', '科', '达', '图'];
+  const CORP_SUF = ['集团', '控股', '实业', '科技', '产业', '投资', '发展', '股份'];
+
+  PROJ.corpName = function (seed) {
+    const h = Math.abs(Math.floor(seed * 9301 + 49297) % 233280);
+    const a = CORP_PRE[h % CORP_PRE.length];
+    const b = CORP_MID[(h >> 3) % CORP_MID.length];
+    const c = CORP_SUF[(h >> 6) % CORP_SUF.length];
+    return a + b + c;
+  };
+
+  /* ---------------- 生成一个意向项目 ---------------- */
+  PROJ.makeIntention = function (g, lv) {
+    const ind = pick(PROJ.INDUSTRIES);
+    const seed = (g.seed || 1) + (g.month || 1) * 137 + (g.player.projects || []).length * 31 + Math.floor(rnd() * 9999);
+    /* 职位越高，招到的项目越大 */
+    const lvK = 0.45 + (lv || 0) * 0.16;  /* 处级约 1.1 倍，省级约 1.9 倍 */
+    const inv = (ind.inv[0] + rnd() * (ind.inv[1] - ind.inv[0])) * lvK;
+    const land = Math.round((ind.land[0] + rnd() * (ind.land[1] - ind.land[0])) * lvK);
+    const jobs = Math.round((ind.jobs[0] + rnd() * (ind.jobs[1] - ind.jobs[0])) * lvK);
+    /* 税收：投资 × 税率 × 波动 */
+    const tax = inv * 10000 * ind.tax * (0.7 + rnd() * 0.6);
+    /* 谈判难度：投资越大越难搞 */
+    const diff = clamp(Math.round(30 + inv * 2.2 + rnd() * 18), 22, 90);
+    return {
+      id: 'p' + Date.now().toString(36) + Math.floor(rnd() * 1000),
+      corp: PROJ.corpName(seed),
+      ind: ind.k,
+      indName: ind.n,
+      ic: ind.ic,
+      inv: Math.round(inv * 10) / 10,      /* 亿元 */
+      land,
+      jobs,
+      tax: Math.round(tax),                 /* 万元/年 */
+      diff,
+      stage: 'intent',                      /* intent → approved → building → done */
+      months: 0,
+      created: g.year + '年' + g.month + '月',
+      note: '',
+    };
+  };
+
+  /* ---------------- 项目阶段文案 ---------------- */
+  PROJ.STAGES = {
+    intent:   { n: '意向洽谈', c: '#8a6a33', d: '企业有投资意向，需你去谈' },
+    approved: { n: '已立项',   c: '#2b6cb0', d: '已批立项，等开工' },
+    building: { n: '建设中',   c: '#6b477f', d: '工地正在施工' },
+    done:     { n: '已投产',   c: '#3f7d5c', d: '项目投产，开始贡献税收' },
+    dead:     { n: '已黄了',   c: '#a5463e', d: '项目没谈成或中途退出' },
+  };
+
+  /* ---------------- 洽谈：花 1 行动点 + 2 万 ---------------- */
+  PROJ.talk = function (g, projId) {
+    const p = g.player;
+    p.projects = p.projects || [];
+    const pj = p.projects.find(x => x.id === projId);
+    if (!pj) return { ok: false, msg: '找不到这个项目' };
+    if (pj.stage !== 'intent') return { ok: false, msg: '这个项目已经谈过了' };
+    if ((p.ap || 0) < 2) return { ok: false, msg: '行动点不够（需 2 点）' };
+    if ((p.netWorth || 0) < 2) return { ok: false, msg: '接待经费不够（需 2 万）' };
+
+    p.ap -= 2;
+    p.netWorth -= 2;
+
+    /* 成功率：考察分、能力、学历、是否有关系 */
+    const base = 0.30
+      + (p.attrs.ability || 50) / 500
+      + (p.attrs.exec || 50) / 600
+      + Math.min(p.exam || 0, 120) / 400;
+    const rate = clamp(base * (1 - pj.diff / 150), 0.08, 0.85);
+    const ok = rnd() < rate;
+
+    if (ok) {
+      pj.stage = 'approved';
+      pj.note = '已立项，可推进开工';
+      p.exam = (p.exam || 0) + 4 + Math.round(pj.inv);
+      p.perf = (p.perf || 0) + 3;
+      g.player.projLog = g.player.projLog || [];
+      g.player.projLog.unshift({ d: g.year + '年' + g.month + '月', t: '签约 ' + pj.corp + ' · ' + pj.indName + '（投资 ' + pj.inv + ' 亿）' });
+      if (g.player.projLog.length > 40) g.player.projLog.pop();
+      return { ok: true, msg: '谈成了！' + pj.corp + ' 决定在我们这里投资 ' + pj.inv + ' 亿元', rate: Math.round(rate * 100) };
+    }
+
+    /* 失败：可能直接黄掉 */
+    if (rnd() < 0.20) {
+      pj.stage = 'dead';
+      pj.note = '企业转投别处';
+      return { ok: false, msg: '没谈成，' + pj.corp + ' 转投了邻市', rate: Math.round(rate * 100) };
+    }
+    pj.note = '意向还在，可以再谈一次';
+    return { ok: false, msg: '这次没谈下来，但企业还没走，可以再试', rate: Math.round(rate * 100) };
+  };
+
+  /* ---------------- 审批开工：花 3 行动点 ---------------- */
+  PROJ.approve = function (g, projId) {
+    const p = g.player;
+    const pj = (p.projects || []).find(x => x.id === projId);
+    if (!pj) return { ok: false, msg: '找不到这个项目' };
+    if (pj.stage !== 'approved') return { ok: false, msg: '这个项目现在不能开工' };
+    if ((p.ap || 0) < 3) return { ok: false, msg: '行动点不够（需 3 点）' };
+
+    /* 用地越大，审批越难（征地、环保） */
+    const landDiff = pj.land > 500 ? 0.35 : pj.land > 200 ? 0.2 : 0.1;
+    const riskAdd = Math.round(pj.land / 120);
+    const ok = rnd() > landDiff;
+
+    p.ap -= 3;
+
+    if (ok) {
+      pj.stage = 'building';
+      pj.months = 0;
+      /* 开工要担风险：征地、环保投诉 */
+      if (riskAdd > 0) {
+        p.riskLog = p.riskLog || [];
+        p.riskLog.push({ v: riskAdd, note: pj.corp + ' 项目征地拆迁争议', date: g.year + '年' + g.month + '月', kind: 'land' });
+      }
+      return { ok: true, msg: '开工了！' + pj.corp + ' 项目正式动工' + (riskAdd ? '（征地风险 +' + riskAdd + '）' : '') };
+    }
+    pj.note = '审批卡在用地指标，可再推一次';
+    return { ok: false, msg: '用地指标卡住了，项目还没能动工' };
+  };
+
+  /* ---------------- 每月推进 ----------------
+     building 阶段经过 6~14 个月自动投产 */
+  PROJ.tick = function (g) {
+    const p = g.player;
+    (p.projects || []).forEach(pj => {
+      if (pj.stage !== 'building') return;
+      pj.months++;
+      const need = Math.round(6 + pj.land / 200);
+      if (pj.months >= need) {
+        pj.stage = 'done';
+        pj.note = '已投产';
+        p.projLog = p.projLog || [];
+        p.projLog.unshift({ d: g.year + '年' + g.month + '月', t: pj.corp + ' 项目竣工投产，年税收 ' + fmt(pj.tax) });
+        /* 政绩与 GDP */
+        p.perf = (p.perf || 0) + 6 + Math.round(pj.inv / 2);
+        g.metrics = g.metrics || {};
+        g.metrics.gdp = (g.metrics.gdp || 0) + pj.inv * 0.8;
+      }
+    });
+  };
+
+  /* ---------------- 已投产项目的年税收合计（万元） ---------------- */
+  PROJ.annualTax = function (g) {
+    const p = g.player;
+    return (p.projects || []).filter(x => x.stage === 'done').reduce((a, b) => a + (b.tax || 0), 0);
+  };
+
+  /* ---------------- 渲染 ---------------- */
+  PROJ.render = function (g) {
+    const p = g.player;
+    p.projects = p.projects || [];
+    const lv = p.level || 0;
+    const canCreate = lv >= 3;
+    const done = p.projects.filter(x => x.stage === 'done');
+    const totalTax = PROJ.annualTax(g);
+    const totalInv = done.reduce((a, b) => a + b.inv, 0);
+
+    /* 顶部统计 */
+    let head = '<div class="card">' +
+      '<div class="ch"><span class="ic green">商</span><h3>招商引资与项目审批</h3>' +
+      '<span class="tail">' + (canCreate ? '本级可自主招商' : '需正处级（市长/县委书记）以上') + '</span></div>';
+
+    head += '<div class="row flex" style="gap:9px;margin-bottom:12px">' +
+      '<div class="stat"><div class="lab">已投产项目</div><div class="val">' + done.length + ' <span class="sm dim">个</span></div></div>' +
+      '<div class="stat"><div class="lab">累计投资</div><div class="val">' + totalInv.toFixed(1) + ' <span class="sm dim">亿</span></div></div>' +
+      '<div class="stat"><div class="lab">年税收贡献</div><div class="val">' + fmt(totalTax) + ' <span class="sm dim">元</span></div></div>' +
+      '</div>';
+
+    if (!canCreate) {
+      head += '<p class="sm dim" style="margin:0">招商引资需要一定职权。晋升到<b>正处级</b>（市长、县委书记）后即可主导项目。</p></div>';
+      return head;
+    }
+
+    /* 洽谈按钮 */
+    head += '<div style="display:flex;gap:7px;align-items:center;margin-bottom:12px;flex-wrap:wrap">' +
+      '<button class="btn primary" data-proj-new="1" ' + ((p.ap || 0) < 1 ? 'disabled' : '') + '>＋ 接待一家意向企业（1 行动点）</button>' +
+      '<span class="sm dim">找项目、谈投资，每谈成一个都是硬政绩</span></div>';
+
+    /* 项目列表 */
+    const active = p.projects.filter(x => x.stage !== 'dead');
+    if (!active.length) {
+      head += '<div style="text-align:center;padding:26px 0;color:#a89878">' +
+        '<div style="font-size:26px;margin-bottom:8px">◇</div>' +
+        '<div class="sm">还没有在谈的项目</div>' +
+        '<div class="sm dim" style="margin-top:4px">点上面的按钮，接待一家意向企业</div></div></div>';
+      return head;
+    }
+
+    head += active.map(pj => {
+      const st = PROJ.STAGES[pj.stage] || PROJ.STAGES.intent;
+      const ind = PROJ.INDUSTRIES.find(x => x.k === pj.ind) || {};
+      let actions = '';
+      if (pj.stage === 'intent') {
+        actions = '<button class="btn sm primary" data-proj-talk="' + pj.id + '" ' + ((p.ap || 0) < 2 ? 'disabled' : '') + '>去谈（2 点 · 2 万）</button>';
+      } else if (pj.stage === 'approved') {
+        actions = '<button class="btn sm primary" data-proj-approve="' + pj.id + '" ' + ((p.ap || 0) < 3 ? 'disabled' : '') + '>推开工（3 点）</button>';
+      } else if (pj.stage === 'building') {
+        const need = Math.round(6 + pj.land / 200);
+        const pct = Math.min(100, Math.round(pj.months / need * 100));
+        actions = '<div style="min-width:110px"><div class="prog" style="height:5px"><i style="width:' + pct + '%"></i></div>' +
+          '<div class="sm dim" style="margin-top:2px">工期 ' + pj.months + '/' + need + ' 月</div></div>';
+      } else {
+        actions = '<span class="tag" style="background:#e6f2e9;color:#3f7d5c">年税收 ' + fmt(pj.tax) + '</span>';
+      }
+      return '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fffdfa">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<span style="font-size:16px;color:' + st.c + '">' + (pj.ic || '◇') + '</span>' +
+          '<b style="font-size:13px">' + pj.corp + '</b>' +
+          '<span class="tag" style="font-size:10px;background:#f3edf8;color:#6b477f">' + pj.indName + '</span>' +
+          '<span class="tag" style="font-size:10px;background:' + st.c + '15;color:' + st.c + '">' + st.n + '</span>' +
+          '<span style="margin-left:auto">' + actions + '</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:14px;margin-top:6px;font-size:11px;color:#7a7186;flex-wrap:wrap">' +
+          '<span>投资 <b style="color:#5b3b6f">' + pj.inv + '</b> 亿</span>' +
+          '<span>用地 <b style="color:#5b3b6f">' + pj.land + '</b> 亩</span>' +
+          '<span>就业 <b style="color:#5b3b6f">' + pj.jobs + '</b> 人</span>' +
+          '<span>年税收 <b style="color:#3f7d5c">' + fmt(pj.tax) + '</b></span>' +
+          '<span>难度 <b style="color:' + (pj.diff > 70 ? '#a5463e' : pj.diff > 50 ? '#8a6a33' : '#3f7d5c') + '">' + pj.diff + '</b></span>' +
+        '</div>' +
+        (ind.desc ? '<div class="sm dim" style="margin-top:4px;font-size:10px">' + ind.desc + '</div>' : '') +
+        (pj.note ? '<div class="sm" style="margin-top:4px;font-size:10.5px;color:#8a6a33">' + pj.note + '</div>' : '') +
+      '</div>';
+    }).join('');
+
+    head += '</div>';
+
+    /* 项目日志 */
+    if ((p.projLog || []).length) {
+      head += '<div class="card">' +
+        '<div class="ch"><span class="ic blue">记</span><h3>招商与项目台账</h3></div>' +
+        p.projLog.slice(0, 12).map(x =>
+          '<div style="display:flex;gap:8px;font-size:11.5px;padding:4px 0;border-bottom:1px dashed var(--line)">' +
+          '<span class="dim" style="flex:none">' + x.d + '</span>' +
+          '<span style="color:#5b3b6f">' + x.t + '</span></div>').join('') +
+        '</div>';
+    }
+    return head;
+  };
+
+  /* ---------------- 绑定 ---------------- */
+  PROJ.bind = function (g) {
+    document.querySelectorAll('[data-proj-new]').forEach(el => {
+      el.onclick = () => {
+        const p = g.player;
+        if ((p.ap || 0) < 1) { if (window.toast) toast('行动点不够'); return; }
+        p.ap -= 1;
+        p.projects = p.projects || [];
+        const pj = PROJ.makeIntention(g, p.level || 0);
+        p.projects.push(pj);
+        if (window.toast) toast('接待了 ' + pj.corp + '，正在洽谈 ' + pj.indName + ' 项目');
+        if (window.save) save();
+        if (window.renderGame) renderGame();
+      };
+    });
+
+    document.querySelectorAll('[data-proj-talk]').forEach(el => {
+      el.onclick = () => {
+        const r = PROJ.talk(g, el.dataset.projTalk);
+        if (window.modal) {
+          modal(r.ok ? '签约成功' : '谈判结果',
+            '<div style="text-align:center;padding:10px 0">' +
+            '<div style="font-size:15px;color:' + (r.ok ? '#3f7d5c' : '#a5463e') + ';margin-bottom:8px">' + r.msg + '</div>' +
+            '<div class="sm dim">本次成功率 ' + (r.rate || 0) + '%</div></div>',
+            [{ n: '知道了', c: 'primary' }]);
+        }
+        if (window.save) save();
+        if (window.renderGame) renderGame();
+      };
+    });
+
+    document.querySelectorAll('[data-proj-approve]').forEach(el => {
+      el.onclick = () => {
+        const r = PROJ.approve(g, el.dataset.projApprove);
+        if (window.toast) toast(r.msg);
+        if (window.save) save();
+        if (window.renderGame) renderGame();
+      };
     });
   };
 })();
@@ -10712,7 +11155,7 @@ function seededRand(str) {
       examScore: 0, examGrade: '—',
       position: null, tenure: 0, career: 0, perf: 0, examPts: 50.6, exp: 20,
       ap: 5, apMax: 5, months: 0, part: 1, history: [],
-      mentorTrain: 0, energy: 100, netWorth: 25, garage: [], carSeq: 0,
+      mentorTrain: 0, energy: 100, netWorth: 25, garage: [], carSeq: 0, projects: [], projLog: [],
     spouse: null, family: null, lastPay: null, salaryLog: [],
     house: null, houseName: null, exposure: 0,
       evalYears: [],
@@ -11283,7 +11726,7 @@ function seededRand(str) {
     ['home', '首', '首页'], ['web', '网', '政府网站'],
     ['faction', '派', '派系'], ['city', '市', '全国城市'],
     ['county', '县', '本县数据'], ['people', '人', '人物关系'], ['social', '往', '人际往来'],
-    ['appoint', '免', '任免通知'], ['discipline', '纪', '纪律审查'],
+    ['appoint', '免', '任免通知'], ['discipline', '纪', '纪律审查'], ['project', '商', '招商引资'],
     ['life', '生', '人生'], ['market', '市', '市场'], ['rank', '榜', '排行榜'], ['map', '图', '全国地图'], ['plan', '规', '城市规划'],
     ['org', '构', '组织架构'], ['chron', '记', '大事记'], ['tutor', '册', '教程'],
   ];
@@ -11339,6 +11782,7 @@ function seededRand(str) {
     $('#btnSettings').onclick = () => modal('设置', '<p>静态复刻版：无服务器，存档在本机浏览器。</p>');
     $('#btnTutor').onclick = () => { PAGE = 'tutor'; renderGame(); };
     bindActions();
+    if (window.PROJ && PAGE === 'project') PROJ.bind(G);
     if (window.__boot) window.__boot.done();
 
     /* 强制问话层 */
@@ -11621,6 +12065,7 @@ function seededRand(str) {
     social: () => (window.renderSocialCenter ? renderSocialCenter(G) : '<p class="sm dim">事件中心未加载</p>'),
     appoint: () => (window.renderAppoint ? renderAppoint(G) : '<p class="sm dim">任免通知未加载</p>'),
     discipline: () => (window.renderDiscipline ? renderDiscipline(G) : '<p class="sm dim">纪律审查未加载</p>'),
+    project: () => (window.PROJ ? PROJ.render(G) : '<p class="sm dim">招商模块未加载</p>'),
     second: () => `<div class="card"><div class="ch"><span class="ic">借</span><h3>借调</h3></div>
       <p class="sm dim">借调能开阔眼界，但容易两头不落好。</p>
       <div style="border:1px solid var(--line);border-radius:9px;padding:8px 12px">市委组织部干部科借调（3 个月）<div class="sm dim">经验 +5 · 考察分 +0.5 · 暂停本级晋升</div></div></div>`,
@@ -12154,6 +12599,8 @@ function seededRand(str) {
       G.day = 1; G.month++; p.tenure++; p.months++;
       p.tenureInLevel = (p.tenureInLevel || 0) + 1;
       G.monthsWorked = (G.monthsWorked || 0) + 1;
+      /* 招商项目按月推进 */
+      if (window.PROJ && PROJ.tick) PROJ.tick(G);
       /* ===== 发工资 ===== */
       if (window.EX) {
         const lvNow = p.level || 0;
