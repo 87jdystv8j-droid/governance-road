@@ -502,6 +502,32 @@
   const ADM = window.ADM || {};
   window.ADM = ADM;
 
+
+  /* ============================================================
+     香港 / 澳门特别行政区（SAR）专属职务体系
+     与内地不同：行政长官、政务司司长、立法会主席…
+     ============================================================ */
+  ADM.isSAR = function (area) {
+    const s = String(area || '');
+    return /特别行政区$/.test(s) || s === '香港' || s === '澳门';
+  };
+
+  /* 行政长官（相当于省委书记+省长合一） */
+  ADM.sarChief = function (area) {
+    const s = String(area || '');
+    return /澳门/.test(s) ? '澳门特别行政区行政长官' : '香港特别行政区行政长官';
+  };
+
+  /* 三司：政务司 / 财政司 / 律政司 */
+  ADM.sarSecretaries = function (area) {
+    const s = String(area || '');
+    const pre = /澳门/.test(s) ? '澳门特别行政区' : '香港特别行政区';
+    if (/澳门/.test(s)) {
+      return ['行政法务司司长', '经济财政司司长', '保安司司长', '社会文化司司长', '运输工务司司长'];
+    }
+    return ['政务司司长', '财政司司长', '律政司司长'];
+  };
+
   /* 行政区类型判定（覆盖全国所有命名） */
   ADM.kindOf = function (area) {
     const s = String(area || '');
@@ -547,16 +573,36 @@
   };
 
   /* 人大：省人大 / 市人大 / 县人大 / 区人大 */
-  ADM.npc = function (area) { return ADM.char(area) + '人大'; };
-  ADM.cppcc = function (area) { return ADM.char(area) + '政协'; };
-  ADM.cdi = function (area) { return ADM.char(area) + '纪委监委'; };
-  ADM.court = function (area) { return ADM.char(area) + '人民法院'; };
-  ADM.proc = function (area) { return ADM.char(area) + '人民检察院'; };
-  ADM.union_ = function (area) { return ADM.char(area) + '总工会'; };
+  /* ---- 人大 / 政协 / 纪委 / 法院 / 检察院 / 工会（SAR 用不同名称） ---- */
+  ADM.npc = function (area) {
+    if (ADM.isSAR(area)) return '立法会';
+    return ADM.char(area) + '人大';
+  };
+  ADM.cppcc = function (area) {
+    if (ADM.isSAR(area)) return /澳门/.test(area) ? '行政会' : '行政会议';
+    return ADM.char(area) + '政协';
+  };
+  ADM.cdi = function (area) {
+    if (ADM.isSAR(area)) return '廉政公署';
+    return ADM.char(area) + '纪委监委';
+  };
+  ADM.court = function (area) {
+    if (ADM.isSAR(area)) return '终审法院';
+    return ADM.char(area) + '人民法院';
+  };
+  ADM.proc = function (area) {
+    if (ADM.isSAR(area)) return '律政司';
+    return ADM.char(area) + '人民检察院';
+  };
+  ADM.union_ = function (area) {
+    if (ADM.isSAR(area)) return /澳门/.test(area) ? '澳门工会联合总会' : '香港工会联合会';
+    return ADM.char(area) + '总工会';
+  };
 
   /* 一把手：省委书记 / 市委书记 / 县委书记 / 区委书记 / 旗委书记 */
   ADM.topTitle = function (area) {
     const k = ADM.kindOf(area);
+    if (k === 'sar' || ADM.isSAR(area)) return ADM.sarChief(area);
     if (k === 'autonomous' && /自治区$/.test(area)) {
       return area + '党委书记';
     }
@@ -565,11 +611,15 @@
   /* 政府正职：省长 / 市长 / 县长 / 区长 / 旗长 */
   ADM.headTitle = function (area) {
     const k = ADM.kindOf(area);
+    if (k === 'sar' || ADM.isSAR(area)) return /澳门/.test(area) ? '行政法务司司长' : '政务司司长';
     if (k === 'banner') return '旗长';
     const c = ADM.char(area);
     return c === '省' ? '省长' : c + '长';
   };
-  ADM.viceTop = function (area) { return ADM.topTitle(area).replace('书记', '副书记').replace('委副书记', '委副书记'); };
+  ADM.viceTop = function (area) {
+    if (ADM.isSAR(area)) return ADM.sarChief(area).replace('行政长官', '政务司司长');
+    return ADM.topTitle(area).replace('书记', '副书记').replace('委副书记', '委副书记');
+  };
   ADM.govHead = function (area) {
     const k = ADM.kindOf(area);
     const c = ADM.char(area);
@@ -578,16 +628,19 @@
   };
   /* 常务：常务副省长 / 常务副市长 / 常务副县长 / 常务副区长 */
   ADM.execHead = function (area) {
+    if (ADM.isSAR(area)) return /澳门/.test(area) ? '经济财政司司长' : '财政司司长';
     const c = ADM.char(area);
     return c === '省' ? '常务副省长' : '常务副' + ADM.headTitle(area);
   };
   ADM.deputy = function (area) {
+    if (ADM.isSAR(area)) return /澳门/.test(area) ? '保安司司长' : '律政司司长';
     const c = ADM.char(area);
     return c === '省' ? '副省长' : '副' + ADM.headTitle(area);
   };
 
   /* 常委班子名：省委常委 / 市委常委 / 县委常委 / 区委常委 */
   ADM.standing = function (area) {
+    if (ADM.isSAR(area)) return '行政会议成员';
     const k = ADM.kindOf(area);
     if (k === 'autonomous' && /自治区$/.test(area)) return '自治区党委常委';
     return ADM.char(area) + '委常委';
@@ -640,6 +693,44 @@
 
   /* 常委 10 席职务 */
   ADM.standingPosts = function (area) {
+    /* ---- 港澳特别行政区 ---- */
+    if (ADM.isSAR(area)) {
+      const isMacau = /澳门/.test(area);
+      const pre = isMacau ? '澳门特别行政区' : '香港特别行政区';
+      const secs = ADM.sarSecretaries(area);
+      const base = [
+        pre + '行政长官',
+        '政务司司长',
+        '财政司司长',
+        '律政司司长',
+        '保安局局长',
+        '教育局局长',
+        '民政事务局局长',
+        '房屋局局长',
+        '运输及物流局局长',
+        '发展局局长',
+        '卫生署署长',
+        '警务处处长',
+      ];
+      if (isMacau) {
+        return [
+          pre + '行政长官',
+          '行政法务司司长',
+          '经济财政司司长',
+          '保安司司长',
+          '社会文化司司长',
+          '运输工务司司长',
+          '警察总局局长',
+          '司法警察局局长',
+          '行政公职局局长',
+          '财政局副局长',
+          '卫生局局长',
+          '教育及青年发展局局长',
+          '市政署管理委员会主席',
+        ];
+      }
+      return base;
+    }
     const k = ADM.kindOf(area);
     const isAR = k === 'autonomous' && /自治区$/.test(area);
     const c = ADM.char(area);
@@ -670,6 +761,45 @@
 
   /* 机构名（按层级生成） */
   ADM.orgsFor = function (area) {
+    /* ===== 港澳特别行政区：层级为 司/局/署/处 ===== */
+    if (ADM.isSAR(area)) {
+      const isMacau = /澳门/.test(area);
+      if (isMacau) {
+        return {
+          party: ['行政长官办公室', '行政法务司', '经济财政司', '保安司', '社会文化司', '运输工务司',
+                  '行政公职局', '法务局', '身份证明局'],
+          gov: ['行政法务司司长办公室', '经济及科技发展局', '财政局', '旅游局', '劳工事务局',
+                '社会保障基金', '教育及青年发展局', '卫生局', '文化局', '体育局',
+                '土地工务局', '公共建设局', '交通事务局', '海事及水务局', '环境保护局',
+                '市政署', '司法警察局', '治安警察局', '消防局', '惩教管理局'],
+          npc: ['立法会', '立法会辅助部门', '立法会第一常设委员会', '立法会第二常设委员会', '立法会第三常设委员会'],
+          cppcc: ['行政会', '行政会秘书处', '行政会发言人办公室'],
+          cdi: ['廉政公署', '审计署', '廉政公署反贪局', '廉政公署行政申诉局'],
+          court: ['终审法院', '中级法院', '初级法院', '行政法院'],
+          union: ['澳门工会联合总会', '澳门妇女联合总会', '澳门街坊会联合总会', '澳门中华总商会'],
+          town: ['堂区', '市政署管理委员会', '市政咨询委员会'],
+        };
+      }
+      return {
+        party: ['行政长官办公室', '政务司司长办公室', '财政司司长办公室', '律政司司长办公室',
+                '中央政策组', '行政署', '效率促进办公室'],
+        gov: ['政务司司长办公室', '财政司司长办公室', '公务员事务局', '政制及内地事务局',
+              '教育局', '环境及生态局', '食物及卫生局', '民政及青年事务局',
+              '劳工及福利局', '保安局', '商务及经济发展局', '发展局',
+              '房屋局', '创新科技及工业局', '运输及物流局', '文化体育及旅游局',
+              '税务局', '海关', '入境事务处', '政府统计处'],
+        npc: ['立法会', '立法会秘书处', '立法会内务委员会', '立法会财务委员会',
+              '立法会法案委员会', '立法会事务委员会'],
+        cppcc: ['行政会议', '行政会议秘书处', '行政会议成员办事处'],
+        cdi: ['廉政公署', '审计署', '廉政公署执行处', '廉政公署防止贪污处',
+              '廉政公署社区关系处', '申诉专员公署'],
+        court: ['终审法院', '高等法院', '区域法院', '裁判法院', '土地审裁处'],
+        union: ['香港工会联合会', '香港中华总商会', '香港总商会', '香港工业总会',
+                '香港社会服务联会', '香港妇女联合会'],
+        town: ['区议会', '区议会秘书处', '地区服务及关爱队伍', '分区委员会'],
+      };
+    }
+
     const c = ADM.char(area);
     const party = c + '委';
     const gov = c + '政府';
@@ -1483,6 +1613,38 @@ FY.randomProvince = function (rnd) {
   JP.titlesFor = function (gameLevel, area) {
     const a = A();
     if (!a) return ['科员'];
+
+    /* ===== 港澳特别行政区：独立的职务体系 ===== */
+    if (a.isSAR && a.isSAR(area)) {
+      const isMacau = /澳门/.test(area);
+      const CHIEF = a.sarChief(area);
+      const LV8 = isMacau
+        ? [CHIEF, '行政法务司司长', '经济财政司司长', '保安司司长', '社会文化司司长', '运输工务司司长', '廉政专员', '审计长', '立法会主席']
+        : [CHIEF, '政务司司长', '财政司司长', '律政司司长', '立法会主席', '终审法院首席法官',
+           '行政会议非官守议员召集人', '廉政专员', '审计署署长'];
+      const LV6 = isMacau
+        ? ['行政公职局局长', '法务局局长', '财政局局长', '经济及科技发展局局长', '旅游局局长',
+           '劳工事务局局长', '卫生局局长', '教育及青年发展局局长', '文化局局长', '司法警察局局长']
+        : ['公务员事务局局长', '政制及内地事务局局长', '教育局局长', '环境及生态局局长',
+           '食物及卫生局局长', '民政及青年事务局局长', '劳工及福利局局长', '保安局局长',
+           '商务及经济发展局局长', '发展局局长', '房屋局局长', '运输及物流局局长',
+           '税务局局长', '海关关长', '入境事务处处长', '警务处处长'];
+      const LV4 = isMacau
+        ? ['首席顾问', '顾问', '厅长', '处长', '代厅长', '技术顾问']
+        : ['首席行政主任', '高级行政主任', '总行政主任', '高级政务主任', '总政务主任', '行政主任'];
+      const LV2 = isMacau
+        ? ['高级技术员', '技术员', '助理技术员', '一等行政技术员', '二等行政技术员']
+        : ['一级行政主任', '二级行政主任', '助理文书主任', '文书主任', '高级文书主任'];
+      const LV0 = isMacau
+        ? ['勤杂人员', '技术辅导员', '助理技术员', '初级技术员']
+        : ['文书助理', '助理文书主任', '办公室助理', '技工', '工人'];
+      if (gameLevel >= 8) return LV8;
+      if (gameLevel >= 6) return LV6;
+      if (gameLevel >= 4) return LV4;
+      if (gameLevel >= 2) return LV2;
+      return LV0;
+    }
+
     const c = a.char(area);
     const party = a.prefix(area);
     const gov = a.gov(area);
