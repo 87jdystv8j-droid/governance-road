@@ -374,9 +374,72 @@
 
 
   .authExpire { text-align: center; font-size: 10px; color: #8a6a33; margin-top: 10px; letter-spacing: .3px; }
+
+  /* ===== 启动加载动画 ===== */
+  #bootLoader {
+    position: fixed; inset: 0; z-index: 99999;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(120% 90% at 50% 0%, #3a1f2b 0%, #241622 45%, #150e18 100%);
+    transition: opacity .45s ease, visibility .45s;
+  }
+  #bootLoader.done { opacity: 0; visibility: hidden; pointer-events: none; }
+  .blBox { text-align: center; width: 260px; }
+  .blSeal { margin-bottom: 14px; animation: blPulse 2s ease-in-out infinite; }
+  @keyframes blPulse { 0%,100% { transform: scale(1); opacity: .95; } 50% { transform: scale(1.05); opacity: 1; } }
+  .blBox h2 {
+    margin: 0; font-size: 21px; letter-spacing: 8px; color: #f4d98a; font-weight: 700;
+    font-family: 'Songti SC','STSong','SimSun',serif; text-indent: 8px;
+  }
+  .blSub { font-size: 8px; letter-spacing: 4px; color: #b09a72; margin-top: 5px; margin-bottom: 26px; }
+  .blBar {
+    height: 4px; border-radius: 2px; background: rgba(244,217,138,.14);
+    overflow: hidden; position: relative;
+  }
+  .blBar i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, #b08a3c, #f4d98a, #b08a3c);
+    border-radius: 2px; transition: width .35s ease;
+    box-shadow: 0 0 10px rgba(244,217,138,.5);
+  }
+  .blTip { font-size: 10.5px; color: #8a7f8f; margin-top: 12px; letter-spacing: .5px; min-height: 15px; }
+  .blPct { font-size: 10px; color: #6f6572; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .blBar i::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+    animation: blShine 1.6s linear infinite;
+  }
+  @keyframes blShine { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+  /* 手机适配 */
+  @media (max-width: 480px) {
+    .blBox { width: 220px; }
+    .blBox h2 { font-size: 18px; letter-spacing: 6px; }
+  }
+
 </style>
 </head>
 <body>
+
+<div id="bootLoader">
+  <div class="blBox">
+    <div class="blSeal">
+      <svg viewBox="0 0 100 100" width="76" height="76">
+        <circle cx="50" cy="50" r="46" fill="none" stroke="#d9b45e" stroke-width="2.5" opacity="0.9"/>
+        <circle cx="50" cy="50" r="40" fill="none" stroke="#f4d98a" stroke-width="1" opacity="0.35"/>
+        <rect x="33" y="62" width="9" height="12" rx="1.5" fill="#f4d98a"/>
+        <rect x="45" y="52" width="9" height="22" rx="1.5" fill="#f4d98a"/>
+        <rect x="57" y="40" width="9" height="34" rx="1.5" fill="#f4d98a"/>
+        <path d="M61.5,26 L64.4,32.5 L71,33.2 L66.2,38 L67.6,45 L61.5,41.3 L55.4,45 L56.8,38 L52,33.2 L58.6,32.5 Z" fill="#f4d98a"/>
+        <rect x="31" y="76" width="38" height="2.5" rx="1.2" fill="#f4d98a" opacity="0.85"/>
+      </svg>
+    </div>
+    <h2>治理者之路</h2>
+    <div class="blSub">ROAD OF GOVERNANCE</div>
+    <div class="blBar"><i id="bootBar"></i></div>
+    <div class="blTip" id="bootTip">正在加载游戏资源…</div>
+    <div class="blPct" id="bootPct">0%</div>
+  </div>
+</div>
 <div id="authHost"></div>
 
 <div id="game" class="hidden">
@@ -10529,6 +10592,7 @@ function seededRand(str) {
 
   /* ================= 入仕（不再考试，直接定档） ================= */
   function renderSetup() {
+    if (window.__boot) window.__boot.set(80, '准备开局面板…');
     $('#setup').classList.remove('hidden');
     $('#game').classList.add('hidden');
     if ($('#setupSeed')) $('#setupSeed').textContent = '种子 ' + G.seed;
@@ -11039,6 +11103,7 @@ function seededRand(str) {
   ];
 
   function renderGame() {
+    if (window.__boot) window.__boot.set(75, '渲染界面…');
     const p0 = G.player;
     /* 风险审查：>=80 直接双开结束；>=70 强制问话 */
     if (window.DC && !G.disc && !G.over) {
@@ -11088,6 +11153,8 @@ function seededRand(str) {
     $('#btnSettings').onclick = () => modal('设置', '<p>静态复刻版：无服务器，存档在本机浏览器。</p>');
     $('#btnTutor').onclick = () => { PAGE = 'tutor'; renderGame(); };
     bindActions();
+    if (window.__boot) window.__boot.done();
+
     /* 强制问话层 */
     const dh = document.getElementById('discHost');
     if (window.DC && G.disc && G.disc.forced) {
@@ -12163,6 +12230,8 @@ function seededRand(str) {
     if (!host || !window.renderAuth) return false;
     host.innerHTML = window.renderAuth('login');
     host.style.display = 'block';
+    /* 登录页就绪 → 关闭加载动画 */
+    if (window.__boot) setTimeout(function () { window.__boot.done(); }, 60);
     window.bindAuth(function (r) {
       host.style.display = 'none';
       host.innerHTML = '';
@@ -12413,10 +12482,40 @@ function seededRand(str) {
   }
   window.titleForLevel = titleForLevel;
 
+  /* ================= 启动加载动画控制 ================= */
+  window.__boot = {
+    bar: null, pct: null, tip: null,
+    init: function () {
+      this.bar = document.getElementById('bootBar');
+      this.pct = document.getElementById('bootPct');
+      this.tip = document.getElementById('bootTip');
+    },
+    set: function (p, text) {
+      if (!this.bar) this.init();
+      if (this.bar) this.bar.style.width = Math.min(100, p) + '%';
+      if (this.pct) this.pct.textContent = Math.round(Math.min(100, p)) + '%';
+      if (text && this.tip) this.tip.textContent = text;
+    },
+    done: function () {
+      this.set(100, '加载完成');
+      const el = document.getElementById('bootLoader');
+      if (!el) return;
+      setTimeout(function () {
+        el.classList.add('done');
+        setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 500);
+      }, 180);
+    },
+  };
+  /* 立即初始化（DOM 已就绪时） */
+  if (document.readyState !== 'loading' && document.getElementById('bootBar')) window.__boot.init();
+
   function boot() {
+    var B = window.__boot;
+    if (B) B.set(65, '检查登录状态…');
     /* 未登录 → 先登录 */
     var _u = (window.AUTH && AUTH.current()) ? AUTH.current() : null;
     if (!_u && !window.__TOPMODE && !window.__DISCMODE) {
+      if (B) B.set(90, '等待登录');
       window.__showAuth();
       var _ah = document.getElementById('authHost');
       if (_ah) _ah.style.display = 'block';
