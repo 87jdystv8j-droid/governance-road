@@ -11134,9 +11134,117 @@ function seededRand(str) {
     10: '副国级', 11: '正国级',
   };
   function g_news() { return G.news || (G.news = []); }
-  const save = () => { try { localStorage.setItem(SAVE, JSON.stringify(G)); } catch (e) {} };
-  const load = () => { try { return JSON.parse(localStorage.getItem(SAVE) || 'null'); } catch (e) { return null; } };
-  const clearSave = () => { try { localStorage.removeItem(SAVE); } catch (e) {} };
+  /* ================= 存档系统（优化版） ================= */
+  const SAVE_META = '_meta';          /* 存档元信息 key 后缀 */
+  let SAVE_ERR_SHOWN = false;         /* 错误只提示一次 */
+
+  const save = function (silent) {
+    try {
+      const json = JSON.stringify(G);
+      localStorage.setItem(SAVE, json);
+      /* 记录元信息：时间、大小、版本 */
+      try {
+        localStorage.setItem(SAVE + SAVE_META, JSON.stringify({
+          at: Date.now(),
+          size: json.length,
+          year: G.year, month: G.month, day: G.day,
+          name: G.player && G.player.name,
+          rank: G.player && G.player.rank,
+          ver: 2,
+        }));
+      } catch (e) {}
+      if (!silent) window.__lastSaveAt = Date.now();
+      return true;
+    } catch (e) {
+      /* 存储失败：配额满 / 隐私模式 */
+      if (!SAVE_ERR_SHOWN) {
+        SAVE_ERR_SHOWN = true;
+        const msg = e.name === 'QuotaExceededError'
+          ? '浏览器存储空间已满，存档失败！请清理浏览器数据或换设备。'
+          : '存档失败：' + e.message;
+        setTimeout(function () { if (window.toast) toast('⚠ ' + msg); }, 100);
+        /* 弹出备份提示 */
+        setTimeout(function () {
+          if (window.modal) {
+            window.modal('⚠ 存档失败',
+              '<p style="color:#a5463e;font-weight:600">' + msg + '</p>' +
+              '<p class="sm" style="margin-top:10px">建议立刻：</p>' +
+              '<ol class="sm" style="padding-left:18px;line-height:1.8">' +
+              '<li>点顶栏「备份」下载 json 文件</li>' +
+              '<li>清理浏览器缓存或换浏览器</li>' +
+              '<li>在新环境「导入」那个 json</li></ol>',
+              [{ n: '我知道了', c: 'primary' }]);
+          }
+        }, 300);
+      }
+      return false;
+    }
+  };
+
+  const load = function () {
+    try {
+      const raw = localStorage.getItem(SAVE);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return null;
+      return obj;
+    } catch (e) {
+      const msg = '存档损坏，已跳过。' + (e.message || '');
+      setTimeout(function () { if (window.toast) toast('⚠ ' + msg); }, 100);
+      return null;
+    }
+  };
+
+  const clearSave = function () {
+    try {
+      localStorage.removeItem(SAVE);
+      localStorage.removeItem(SAVE + SAVE_META);
+    } catch (e) {}
+  };
+
+  /* 读取存档元信息 */
+  window.__saveMeta = function () {
+    try {
+      const raw = localStorage.getItem(SAVE + SAVE_META);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) { return null; }
+  };
+
+  /* 手动存档：带完整反馈 */
+  window.__saveNow = function () {
+    if (!G) return false;
+    const ok = save();
+    if (ok) {
+      const t = new Date();
+      const hh = String(t.getHours()).padStart(2, '0');
+      const mm = String(t.getMinutes()).padStart(2, '0');
+      const ss = String(t.getSeconds()).padStart(2, '0');
+      if (window.toast) toast('✓ 已存档 · ' + hh + ':' + mm + ':' + ss);
+    }
+    return ok;
+  };
+
+  /* 自动存档：每 60 秒 */
+  let AUTOSAVE_TIMER = null;
+  window.__startAutoSave = function () {
+    if (AUTOSAVE_TIMER) return;
+    AUTOSAVE_TIMER = setInterval(function () {
+      if (G && !G.ended) {
+        const ok = save(true);
+        if (ok) window.__lastSaveAt = Date.now();
+      }
+    }, 60000);
+  };
+
+  /* 关闭页面前保存 */
+  window.addEventListener('beforeunload', function (e) {
+    if (G && !G.ended) save(true);
+  });
+  /* 切到后台时保存（手机切换 App） */
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden' && G && !G.ended) save(true);
+  });
 
   function seeded(str) {
     let h = 2166136261;
@@ -11775,10 +11883,28 @@ function seededRand(str) {
         <span>辖区发展度 <b>${G.develop}</b></span>
         <span>辖区稳定度 <b>${G.stable}</b></span>
       </div>
+      <span id="saveHint" style="font-size:10px;color:#a89878;margin-right:6px"></span>
       <button class="btn sm ghost" id="btnSave">存档</button>
       <button class="btn sm ghost" id="btnSettings">设置</button>
       <button class="btn sm ghost" id="btnTutor">教程</button>`;
-    $('#btnSave').onclick = () => { save(); toast('已存档'); };
+    $('#btnSave').onclick = () => { window.__saveNow(); };
+    /* 显示上次存档时间 */
+    (function () {
+      const el = document.getElementById('saveHint');
+      if (!el) return;
+      const tick = function () {
+        const m = window.__saveMeta ? window.__saveMeta() : null;
+        if (!m || !m.at) { el.textContent = ''; return; }
+        const sec = Math.floor((Date.now() - m.at) / 1000);
+        el.textContent = sec < 5 ? '刚存过'
+          : sec < 60 ? sec + ' 秒前存档'
+          : sec < 3600 ? Math.floor(sec / 60) + ' 分钟前存档'
+          : Math.floor(sec / 3600) + ' 小时前存档';
+      };
+      tick();
+      if (window.__saveHintTimer) clearInterval(window.__saveHintTimer);
+      window.__saveHintTimer = setInterval(tick, 5000);
+    })();
     $('#btnSettings').onclick = () => modal('设置', '<p>静态复刻版：无服务器，存档在本机浏览器。</p>');
     $('#btnTutor').onclick = () => { PAGE = 'tutor'; renderGame(); };
     bindActions();
@@ -13144,6 +13270,7 @@ function seededRand(str) {
 
   function boot() {
     var B = window.__boot;
+    if (window.__startAutoSave) window.__startAutoSave();
     if (B) B.set(65, '检查登录状态…');
     /* 未登录 → 先登录 */
     var _u = (window.AUTH && AUTH.current()) ? AUTH.current() : null;
