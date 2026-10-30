@@ -11795,6 +11795,7 @@ function seededRand(str) {
   window.__startAutoSave = function () {
     if (AUTOSAVE_TIMER) return;
     AUTOSAVE_TIMER = setInterval(function () {
+      if (window.__pendingSave) return;   /* 存档确认页未选择 → 不覆盖 */
       if (G && !G.ended) {
         const ok = save(true);
         if (ok) window.__lastSaveAt = Date.now();
@@ -11804,10 +11805,12 @@ function seededRand(str) {
 
   /* 关闭页面前保存 */
   window.addEventListener('beforeunload', function (e) {
+    if (window.__pendingSave) return;   /* 确认页未选择 → 不覆盖 */
     if (G && !G.ended) save(true);
   });
   /* 切到后台时保存（手机切换 App） */
   document.addEventListener('visibilitychange', function () {
+    if (window.__pendingSave) return;
     if (document.visibilityState === 'hidden' && G && !G.ended) save(true);
   });
 
@@ -13928,6 +13931,121 @@ function seededRand(str) {
   /* 立即初始化（DOM 已就绪时） */
   if (document.readyState !== 'loading' && document.getElementById('bootBar')) window.__boot.init();
 
+  /* ================= 存档确认页 ================= */
+  function renderResume(save) {
+    const p = save.player || {};
+    const host = document.getElementById('authHost');
+    if (!host) { G = window.G = save; renderGame(); return; }
+
+    /* 统计信息 */
+    const pos = p.position || {};
+    const where = [pos.province, pos.city, pos.county].filter(Boolean).join('·') || '未知地区';
+    const orgTxt = [pos.org, pos.sec].filter(Boolean).join('·') || '—';
+    const lvName = (window.LVNAMES && window.LVNAMES[p.level || 0]) || '科员';
+    const projectCount = (p.projects || []).filter(x => x.stage === 'done').length;
+    const taskDone = p.tasks ? p.tasks.filter(t => t.done >= t.need).length : 0;
+    const taskTotal = p.tasks ? p.tasks.length : 0;
+    const riskNow = (function(){ try { return window.RISK ? RISK.get(save) : 0; } catch(e) { return 0; } })();
+
+    /* 存档时间 */
+    let savedAt = '';
+    try {
+      const meta = JSON.parse(localStorage.getItem(SAVE + '_meta') || 'null');
+      if (meta && meta.at) {
+        const dt = new Date(meta.at);
+        const pad = n => ('0' + n).slice(-2);
+        savedAt = dt.getFullYear() + '-' + pad(dt.getMonth()+1) + '-' + pad(dt.getDate()) +
+          ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+      }
+    } catch (e) {}
+
+    const row = (k, v) => '<div style="display:flex;justify-content:space-between;padding:8px 0;' +
+      'border-bottom:1px solid rgba(91,59,111,.1);font-size:12.5px">' +
+      '<span style="color:#8a7f8f">' + k + '</span>' +
+      '<span style="color:#5b3b6f;font-weight:600;text-align:right">' + v + '</span></div>';
+
+    host.innerHTML = `<div class="authWrap">
+      <div class="authCard" style="max-width:400px">
+        <div style="text-align:center;margin-bottom:4px">
+          <div style="font-size:10px;letter-spacing:3px;color:#b8a06a">ROAD OF GOVERNANCE</div>
+        </div>
+        <h1 class="authTitle" style="margin-top:8px">治理者之路</h1>
+        <div style="text-align:center;font-size:22px;font-weight:700;color:#5b3b6f;margin:14px 0 4px;letter-spacing:2px">
+          发现一份存档</div>
+        <p class="sm dim" style="text-align:center;margin:0 0 16px">
+          这个账号已有一局正在进行，是否继续？</p>
+
+        <div style="background:#fffdfa;border:1px solid var(--line);border-radius:11px;padding:4px 14px 10px;margin-bottom:14px">
+          ${row('姓名', (p.name || '—') + '（' + lvName + '）')}
+          ${row('职务', p.title || (pos.title || '—'))}
+          ${row('单位', where + ' · ' + orgTxt)}
+          ${row('任期', '第 ' + ((p.part || 1)) + ' 届 · 已任 ' + (p.monthsWorked || 0) + ' 个月')}
+          ${row('游戏日期', (save.year || 2024) + '年' + (save.month || 1) + '月' + (save.day || 1) + '日')}
+          ${row('任务进度', taskDone + ' / ' + taskTotal + ' 项完成')}
+          ${projectCount ? row('招商投产', projectCount + ' 个项目') : ''}
+          ${row('廉洁 / 风险', Math.round(p.attrs && p.attrs.clean || 0) + ' / ' + riskNow)}
+          ${row('净资产', (Math.round((p.netWorth || 0) * 10) / 10) + ' 万')}
+          ${savedAt ? row('上次保存', savedAt) : ''}
+        </div>
+
+        <button class="btn primary wide" id="btnResume" style="margin-bottom:8px">继续这一局 →</button>
+        <button class="btn wide" id="btnNewGame">开始新的一局</button>
+
+        <div style="display:flex;justify-content:center;gap:16px;margin-top:12px;font-size:10.5px">
+          <a href="#" id="btnResumeExport" style="color:#2b6cb0;text-decoration:none">备份存档</a>
+          <a href="#" id="btnResumeLogout" style="color:#8a6a33;text-decoration:none">退出登录</a>
+        </div>
+
+        <p class="sm dim" style="text-align:center;margin:14px 0 0;font-size:9.5px;line-height:1.6">
+          换设备不用愁 —— 顶栏「导出」可把存档发到新设备「导入」</p>
+      </div>
+    </div>`;
+    host.style.display = 'block';
+    document.getElementById('game').classList.add('hidden');
+    document.getElementById('setup').classList.add('hidden');
+
+    /* 继续 */
+    document.getElementById('btnResume').onclick = function () {
+      host.style.display = 'none';
+      host.innerHTML = '';
+      G = window.G = window.__pendingSave;
+      window.__pendingSave = null;
+      if (window.__boot) window.__boot.done();
+      if (G.player && G.player.position) renderGame();
+      else { renderPost(); }
+    };
+    /* 新局 */
+    document.getElementById('btnNewGame').onclick = function () {
+      if (!confirm('开始新的一局会清空当前进度。\n\n建议先点「备份存档」导出一份。\n\n确定要开新局吗？')) return;
+      host.style.display = 'none';
+      host.innerHTML = '';
+      window.__pendingSave = null;
+      clearSave();
+      newGame();
+      renderSetup();
+      if (window.__boot) window.__boot.done();
+    };
+    /* 备份 */
+    document.getElementById('btnResumeExport').onclick = function (e) {
+      e.preventDefault();
+      const u = (window.AUTH && AUTH.current()) ? AUTH.current().user : null;
+      if (!u || !window.AUTH) { alert('请先登录'); return; }
+      const txt = AUTH.exportSave(u);
+      if (!txt) { alert('没有存档'); return; }
+      const blob = new Blob([txt], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '治理者之路存档_' + u + '_' + Date.now() + '.json';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 3000);
+    };
+    /* 退出 */
+    document.getElementById('btnResumeLogout').onclick = function (e) {
+      e.preventDefault();
+      if (window.__logout) window.__logout();
+    };
+  }
+
   function boot() {
     var B = window.__boot;
     if (window.__startAutoSave) window.__startAutoSave();
@@ -13982,6 +14100,14 @@ function seededRand(str) {
       return;
     }
     const s = load();
+    if (s && s.player && s.player.position && !window.__SKIP_RESUME) {
+      /* ===== 有存档 → 显示存档确认页 ===== */
+      if (B) B.set(95, '读取存档…');
+      window.__pendingSave = s;
+      renderResume(s);
+      if (window.__boot) setTimeout(function () { window.__boot.done(); }, 60);
+      return;
+    }
     if (s) {
       G = window.G = s;
       if (G.player && G.player.position) { renderGame(); return; }
