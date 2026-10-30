@@ -3977,6 +3977,20 @@ FY.randomProvince = function (rnd) {
     return { ok: true, msg: '欢迎回来，' + acc.nick };
   };
 
+  function fmtFull(ts) {
+    const d = new Date(ts);
+    const p = n => ('0' + n).slice(-2);
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  /* 剩余天数（带半天精度） */
+  function remainExact(expireAt) {
+    if (!expireAt) return null;
+    const ms = expireAt - Date.now();
+    if (ms <= 0) return 0;
+    return Math.ceil(ms / 86400000);
+  }
+
   function fmtDate(ts) {
     const d = new Date(ts);
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
@@ -4022,6 +4036,85 @@ FY.randomProvince = function (rnd) {
     } catch (e) {
       return { ok: false, msg: '文件解析失败' };
     }
+  };
+
+  /* ============================================================
+     渲染：进入确认页（显示激活时间、剩余时长）
+     ============================================================ */
+  A.renderEnter = function (u) {
+    const acc = A.users()[u];
+    if (!acc) return '<div class="authWrap"><div class="authCard"><p>账号不存在</p></div></div>';
+    const left = remainExact(acc.expireAt);
+    const isExpired = left === 0;
+    const isWarn = left !== null && left <= 7 && left > 0;
+    const pct = acc.expireAt && acc.activatedAt
+      ? Math.min(100, Math.max(0, (Date.now() - acc.activatedAt) / (acc.expireAt - acc.activatedAt) * 100))
+      : 0;
+
+    return `<div class="authWrap">
+      <div class="authCard" style="max-width:360px">
+        <img class="authLogo" src="${LOGO}" alt="logo">
+        <h1 class="authTitle">治理者之路</h1>
+        <p class="authSub">ROAD OF GOVERNANCE</p>
+
+        <div style="margin:18px 0 6px;text-align:center">
+          <div style="font-size:15px;font-weight:700;color:#5b3b6f">${acc.nick || u}</div>
+          <div class="sm dim" style="margin-top:2px">账号 ${u}</div>
+        </div>
+
+        ${isExpired ? `<div style="background:#fbe6e4;border:1px solid #e0b8b2;border-radius:9px;padding:10px 12px;margin:14px 0;text-align:center">
+          <div style="color:#a5463e;font-weight:700;font-size:13px">账号已到期</div>
+          <div class="sm" style="color:#a5463e;margin-top:3px">到期时间 ${fmtFull(acc.expireAt)}</div>
+          <div class="sm dim" style="margin-top:5px">联系 q群 112486331 续期</div>
+        </div>` : `<div style="background:${isWarn ? '#fff8e8' : '#eef7f0'};border:1px solid ${isWarn ? '#e8d8b0' : '#b8d9c4'};border-radius:9px;padding:10px 12px;margin:14px 0">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-size:12px;color:${isWarn ? '#8a6a33' : '#3f7d5c'};font-weight:600">时长有效</span>
+            <span style="font-size:11px;color:${isWarn ? '#8a6a33' : '#3f7d5c'}">剩 ${left} 天</span>
+          </div>
+          <div style="height:4px;background:rgba(0,0,0,.06);border-radius:2px;margin:7px 0 8px;overflow:hidden">
+            <i style="display:block;height:100%;width:${pct}%;background:${isWarn ? '#c99a5b' : '#4a8c5c'}"></i>
+          </div>
+          <div style="font-size:11px;line-height:1.9;color:#6b5f52">
+            <div>激活时间：<b>${fmtFull(acc.activatedAt)}</b></div>
+            <div>到期时间：<b>${fmtFull(acc.expireAt)}</b></div>
+            <div>有效时长：<b>${acc.days || 90} 天</b>${isWarn ? ' <span style="color:#a5463e">（即将到期）</span>' : ''}</div>
+          </div>
+        </div>`}
+
+        <button class="btn primary wide" id="btnEnter" style="margin-top:6px" ${isExpired ? 'disabled' : ''}>
+          ${isExpired ? '已到期' : '进入游戏'}
+        </button>
+
+        <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:10.5px">
+          <a href="#" id="btnBackLogin" style="color:#8a6a33;text-decoration:none">← 换个账号</a>
+          <a href="#" id="btnEnterExport" style="color:#2b6cb0;text-decoration:none">备份存档</a>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  /* 绑定进入页 */
+  A.bindEnter = function (u, onOK) {
+    const be = document.getElementById('btnEnter');
+    if (be) be.onclick = function () {
+      if (be.disabled) return;
+      onOK(u);
+    };
+    const bb = document.getElementById('btnBackLogin');
+    if (bb) bb.onclick = function (e) {
+      e.preventDefault();
+      if (window.renderAuth) {
+        const host = document.getElementById('authHost');
+        if (host) { host.innerHTML = window.renderAuth('login'); host.style.display = 'block'; }
+        if (window.bindAuth) window.bindAuth(function () { onOK(); });
+      }
+    };
+    const bx = document.getElementById('btnEnterExport');
+    if (bx) bx.onclick = function (e) {
+      e.preventDefault();
+      if (window.__exportSave) window.__exportSave();
+      else alert('暂无可备份的存档');
+    };
   };
 
   /* ============================================================
@@ -4137,6 +4230,21 @@ FY.randomProvince = function (rnd) {
       }
       if (!r.ok) { if (err) err.textContent = r.msg; return; }
       if (err) err.textContent = '';
+
+      /* 登录/注册成功 → 先进确认页，显示激活时间与剩余时长 */
+      const uu = u.trim();
+      A.__pendingOK = onOK;
+      const host = document.getElementById('authHost');
+      if (host) {
+        host.innerHTML = A.renderEnter(uu);
+        host.style.display = 'block';
+        A.bindEnter(uu, function () {
+          const cb = A.__pendingOK;
+          A.__pendingOK = null;
+          if (cb) cb(r);
+        });
+        return;
+      }
       if (onOK) onOK(r);
     };
 
