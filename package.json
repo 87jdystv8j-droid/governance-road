@@ -1,0 +1,15 @@
+{
+  "name": "governance-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "治理者之路 · Supabase 代理（国内可访问）",
+  "engines": {
+    "node": ">=18"
+  },
+  "rewrites": [
+    {
+      "source": "/api/supabase/:path*",
+      "destination": "/api/supabase"
+    }
+  ]
+}
