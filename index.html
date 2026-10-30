@@ -3831,8 +3831,8 @@ FY.randomProvince = function (rnd) {
      填入后自动启用云端；留空则纯本地
      ---------------------------------------- */
   CLOUD.CONFIG = {
-    url: 'https://jibbshqjhtawfcbwxigby.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpiYnNocWpodGF3ZmNid3hpZ2J5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzMjIwMzgsImV4cCI6MjEwODg5ODAzOH0.WWsLe3SOxHuyntkzTOQwJh57GXeZ5NvZEmLLF5C085Y'
+    url: '',
+    anonKey: '',
   };
 
   CLOUD.enabled = function () {
@@ -4111,12 +4111,8 @@ FY.randomProvince = function (rnd) {
         if (!cr.ok) {
           /* 网络故障 → 拒绝注册（安全优先，不允许绕过验证） */
           if (cr.networkError) {
-            return {
-              ok: false,
-              msg: '无法连接验证服务器，请检查网络后重试（激活码需要联网验证）',
-              networkError: true,
-              cloud: true,
-            };
+            /* 云端不可达 → 降级本地激活（纯本地模式） */
+            return A.__registerLocal(u, p, nick, c, salt, now, true);
           }
           return { ok: false, msg: cr.msg, cloud: true };
         }
