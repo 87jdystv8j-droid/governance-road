@@ -4109,9 +4109,14 @@ FY.randomProvince = function (rnd) {
     if (window.CLOUD && CLOUD.enabled()) {
       return CLOUD.activate(c, u, CODE_DAYS[c] || 90).then(function (cr) {
         if (!cr.ok) {
-          /* 网络故障 → 降级本地（离线可玩） */
+          /* 网络故障 → 拒绝注册（安全优先，不允许绕过验证） */
           if (cr.networkError) {
-            return A.__registerLocal(u, p, nick, c, salt, now, true);
+            return {
+              ok: false,
+              msg: '无法连接验证服务器，请检查网络后重试（激活码需要联网验证）',
+              networkError: true,
+              cloud: true,
+            };
           }
           return { ok: false, msg: cr.msg, cloud: true };
         }
