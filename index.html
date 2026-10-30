@@ -3814,6 +3814,167 @@ FY.randomProvince = function (rnd) {
 })();
 </script>
 <script>/* ============================================================
+   治理者之路 · 云端模块（Supabase REST）
+   功能：
+     1. 激活码全局唯一（一台服务器记账，换设备也绕不过）
+     2. 账号云端存储（换设备能登录）
+     3. 存档云端同步（可选）
+   未配置时自动降级为纯本地模式
+   ============================================================ */
+(function () {
+  'use strict';
+
+  const CLOUD = {};
+  window.CLOUD = CLOUD;
+
+  /* ---------------- 配置 ----------------
+     填入后自动启用云端；留空则纯本地
+     ---------------------------------------- */
+  CLOUD.CONFIG = {
+    url: 'https://jibbshqjhtawfcbwxigby.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpiYnNocWpodGF3ZmNid3hpZ2J5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzMjIwMzgsImV4cCI6MjEwODg5ODAzOH0.WWsLe3SOxHuyntkzTOQwJh57GXeZ5NvZEmLLF5C085Y',
+  };
+
+  CLOUD.enabled = function () {
+    return !!(CLOUD.CONFIG.url && CLOUD.CONFIG.anonKey);
+  };
+
+  /* ---------------- 底层请求 ---------------- */
+  function rest(path, opts) {
+    const o = opts || {};
+    const headers = {
+      'apikey': CLOUD.CONFIG.anonKey,
+      'Authorization': 'Bearer ' + CLOUD.CONFIG.anonKey,
+      'Content-Type': 'application/json',
+      'Prefer': o.prefer || 'return=representation',
+    };
+    return fetch(CLOUD.CONFIG.url + '/rest/v1/' + path, {
+      method: o.method || 'GET',
+      headers: headers,
+      body: o.body ? JSON.stringify(o.body) : undefined,
+    }).then(function (r) {
+      return r.text().then(function (t) {
+        let data = null;
+        try { data = t ? JSON.parse(t) : null; } catch (e) { data = t; }
+        if (!r.ok) {
+          const msg = (data && (data.message || data.hint || data.error)) || ('HTTP ' + r.status);
+          const err = new Error(msg);
+          err.status = r.status;
+          err.data = data;
+          throw err;
+        }
+        return data;
+      });
+    });
+  }
+
+  /* 调用 rpc 函数（激活码原子抢占） */
+  function rpc(fn, args) {
+    return rest('rpc/' + fn, { method: 'POST', body: args });
+  }
+
+  /* ---------------- 激活码：全局唯一 ----------------
+     返回 { ok, msg, expireAt }
+     ---------------------------------------- */
+  CLOUD.activate = function (code, user, days) {
+    if (!CLOUD.enabled()) return Promise.resolve({ ok: false, offline: true, msg: '云端未配置' });
+    return rpc('activate_code', {
+      p_code: String(code || '').trim().toUpperCase(),
+      p_user: user,
+      p_days: days || 90,
+    }).then(function (rows) {
+      const r = Array.isArray(rows) ? rows[0] : rows;
+      if (!r) return { ok: false, msg: '云端返回异常' };
+      return {
+        ok: !!r.ok,
+        msg: r.msg || (r.ok ? '激活成功' : '激活失败'),
+        expireAt: r.expire_at ? new Date(r.expire_at).getTime() : null,
+      };
+    }).catch(function (e) {
+      return { ok: false, msg: '网络异常：' + e.message, networkError: true };
+    });
+  };
+
+  /* ---------------- 账号：云端注册 ---------------- */
+  CLOUD.registerAccount = function (user, pwHash, nick, code, activatedAt, expireAt) {
+    if (!CLOUD.enabled()) return Promise.resolve({ ok: false, offline: true });
+    return rest('accounts', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: [{
+        username: user,
+        pw_hash: pwHash,
+        nick: nick || user,
+        code: code,
+        activated_at: new Date(activatedAt).toISOString(),
+        expire_at: new Date(expireAt).toISOString(),
+      }],
+    }).then(function (rows) {
+      return { ok: true, row: Array.isArray(rows) ? rows[0] : rows };
+    }).catch(function (e) {
+      /* 23505 = 主键冲突（账号已存在） */
+      if (e.status === 409 || (e.data && e.data.code === '23505')) {
+        return { ok: false, msg: '这个账号已经注册过了' };
+      }
+      return { ok: false, msg: '注册失败：' + e.message };
+    });
+  };
+
+  /* ---------------- 账号：云端登录 ---------------- */
+  CLOUD.loginAccount = function (user) {
+    if (!CLOUD.enabled()) return Promise.resolve({ ok: false, offline: true });
+    return rest('accounts?username=eq.' + encodeURIComponent(user) + '&select=*')
+      .then(function (rows) {
+        if (!rows || !rows.length) return { ok: false, msg: '账号不存在' };
+        return { ok: true, acc: rows[0] };
+      }).catch(function (e) {
+        return { ok: false, msg: '网络异常：' + e.message, networkError: true };
+      });
+  };
+
+  /* ---------------- 存档：上传 ---------------- */
+  CLOUD.pushSave = function (user, saveObj) {
+    if (!CLOUD.enabled()) return Promise.resolve({ ok: false, offline: true });
+    return rest('accounts?username=eq.' + encodeURIComponent(user), {
+      method: 'PATCH',
+      prefer: 'return=minimal',
+      body: {
+        save_data: saveObj,
+        updated_at: new Date().toISOString(),
+      },
+    }).then(function () {
+      return { ok: true, at: Date.now() };
+    }).catch(function (e) {
+      return { ok: false, msg: e.message };
+    });
+  };
+
+  /* ---------------- 存档：下载 ---------------- */
+  CLOUD.pullSave = function (user) {
+    if (!CLOUD.enabled()) return Promise.resolve({ ok: false, offline: true });
+    return rest('accounts?username=eq.' + encodeURIComponent(user) + '&select=save_data,updated_at')
+      .then(function (rows) {
+        if (!rows || !rows.length) return { ok: false, msg: '账号不存在' };
+        return { ok: true, data: rows[0].save_data, updatedAt: rows[0].updated_at };
+      }).catch(function (e) {
+        return { ok: false, msg: e.message };
+      });
+  };
+
+  /* ---------------- 健康检查（设置页用） ---------------- */
+  CLOUD.ping = function () {
+    if (!CLOUD.enabled()) return Promise.resolve({ ok: false, msg: '未配置云端' });
+    const t0 = Date.now();
+    return rest('codes?select=code&limit=1')
+      .then(function (rows) {
+        return { ok: true, ms: Date.now() - t0, count: Array.isArray(rows) ? rows.length : 0 };
+      }).catch(function (e) {
+        return { ok: false, msg: e.message, ms: Date.now() - t0 };
+      });
+  };
+})();
+</script>
+<script>/* ============================================================
    治理者之路 · 登录 / 注册 / 激活码 / 存档
    纯前端实现：账号存 localStorage，存档自动同步
    ============================================================ */
@@ -3924,28 +4085,75 @@ FY.randomProvince = function (rnd) {
   };
 
   /* ---------- 注册 ---------- */
+    /* 注册（异步：优先云端验证激活码，云端不可用时降级本地）
+     返回 Promise<{ ok, msg, cloud }> */
   A.register = function (u, p, nick, code) {
-    const e1 = A.checkUser(u); if (e1) return { ok: false, msg: e1 };
-    const e2 = A.checkPass(p); if (e2) return { ok: false, msg: e2 };
+    const e1 = A.checkUser(u); if (e1) return Promise.resolve({ ok: false, msg: e1 });
+    const e2 = A.checkPass(p); if (e2) return Promise.resolve({ ok: false, msg: e2 });
     const users = A.users();
-    if (users[u]) return { ok: false, msg: '这个账号已经注册过了' };
-    /* 校验激活码 */
+    if (users[u]) return Promise.resolve({ ok: false, msg: '这个账号已经注册过了' });
+
     const c = String(code || '').trim().toUpperCase();
-    if (!c) return { ok: false, msg: '请输入激活码' };
-    if (CODES.indexOf(c) < 0) return { ok: false, msg: '激活码无效' };
-    /* 校验是否已被使用（本地记录 + 归属记录） */
-    const used = A.usedCodes();
-    const owner = A.ownerOfCode(c);
-    if (owner && owner !== u) {
-      return { ok: false, msg: '这个激活码已被其他账号使用' };
-    }
-    if (used.indexOf(c) >= 0 && !owner) {
-      return { ok: false, msg: '这个激活码已经被用过了' };
+    if (!c) return Promise.resolve({ ok: false, msg: '请输入激活码' });
+
+    /* ---- 本地预检（云端模式下也做一次，快速失败） ---- */
+    const owner0 = A.ownerOfCode(c);
+    if (owner0 && owner0 !== u) {
+      return Promise.resolve({ ok: false, msg: '这个激活码已被其他账号使用' });
     }
 
     const salt = mkSalt();
-    const days = CODE_DAYS[c] || 90;
     const now = Date.now();
+
+    /* ---- 云端模式 ---- */
+    if (window.CLOUD && CLOUD.enabled()) {
+      return CLOUD.activate(c, u, CODE_DAYS[c] || 90).then(function (cr) {
+        if (!cr.ok) {
+          /* 网络故障 → 降级本地（离线可玩） */
+          if (cr.networkError) {
+            return A.__registerLocal(u, p, nick, c, salt, now, true);
+          }
+          return { ok: false, msg: cr.msg, cloud: true };
+        }
+        /* 云端抢到码 → 写本地账号 */
+        const days = CODE_DAYS[c] || 90;
+        const expireAt = cr.expireAt || (now + days * 86400000);
+        users[u] = {
+          nick: (nick || u).slice(0, 12),
+          salt: salt,
+          pw: hash(p, salt),
+          since: now,
+          code: c,
+          activatedAt: now,
+          expireAt: expireAt,
+          days: days,
+          cloud: true,
+        };
+        wr(LS_USERS, users);
+        A.bindCode(c, u);
+        wr(LS_SESSION, { u: u, at: Date.now() });
+        /* 同时写云端账号表 */
+        if (CLOUD.registerAccount) {
+          CLOUD.registerAccount(u, users[u].pw, users[u].nick, c, now, expireAt).catch(function () {});
+        }
+        return { ok: true, msg: '注册成功，开始你的仕途吧', cloud: true };
+      });
+    }
+
+    /* ---- 纯本地模式 ---- */
+    return Promise.resolve(A.__registerLocal(u, p, nick, c, salt, now, false));
+  };
+
+  /* 本地注册（业务逻辑抽出来，供云端降级复用） */
+  A.__registerLocal = function (u, p, nick, c, salt, now, degraded) {
+    const users = A.users();
+    if (CODES.indexOf(c) < 0) return { ok: false, msg: '激活码无效' };
+    const used = A.usedCodes();
+    const owner = A.ownerOfCode(c);
+    if (owner && owner !== u) return { ok: false, msg: '这个激活码已被其他账号使用' };
+    if (used.indexOf(c) >= 0 && !owner) return { ok: false, msg: '这个激活码已经被用过了' };
+
+    const days = CODE_DAYS[c] || 90;
     users[u] = {
       nick: (nick || u).slice(0, 12),
       salt: salt,
@@ -3953,14 +4161,18 @@ FY.randomProvince = function (rnd) {
       since: now,
       code: c,
       activatedAt: now,
-      expireAt: now + days * 24 * 3600 * 1000,
+      expireAt: now + days * 86400000,
       days: days,
     };
     wr(LS_USERS, users);
     A.bindCode(c, u);
     wr(LS_SESSION, { u: u, at: Date.now() });
-    return { ok: true, msg: '注册成功，开始你的仕途吧' };
-  };
+    return {
+      ok: true,
+      msg: degraded ? '注册成功（网络异常，已本地激活）' : '注册成功，开始你的仕途吧',
+      degraded: !!degraded,
+    };
+  };;
 
   /* ---------- 登录 ---------- */
   A.login = function (u, p) {
@@ -4218,34 +4430,52 @@ FY.randomProvince = function (rnd) {
     if (!btn) return;
 
     const submit = function () {
+      if (btn.disabled) return;
       const u = (document.getElementById('auUser') || {}).value || '';
       const p = (document.getElementById('auPass') || {}).value || '';
-      let r;
-      if (isLogin) {
-        r = AUTH.login(u.trim(), p);
-      } else {
-        const nick = (document.getElementById('auNick') || {}).value || '';
-        const code = (document.getElementById('auCode') || {}).value || '';
-        r = AUTH.register(u.trim(), p, nick.trim(), code);
-      }
-      if (!r.ok) { if (err) err.textContent = r.msg; return; }
-      if (err) err.textContent = '';
-
-      /* 登录/注册成功 → 先进确认页，显示激活时间与剩余时长 */
       const uu = u.trim();
-      A.__pendingOK = onOK;
-      const host = document.getElementById('authHost');
-      if (host) {
-        host.innerHTML = A.renderEnter(uu);
-        host.style.display = 'block';
-        A.bindEnter(uu, function () {
-          const cb = A.__pendingOK;
-          A.__pendingOK = null;
-          if (cb) cb(r);
-        });
+
+      const finish = function (r) {
+        if (!r || !r.ok) { if (err) err.textContent = (r && r.msg) || '操作失败'; return; }
+        if (err) err.textContent = '';
+        /* 登录/注册成功 → 先进确认页 */
+        A.__pendingOK = onOK;
+        const host = document.getElementById('authHost');
+        if (host) {
+          host.innerHTML = A.renderEnter(uu);
+          host.style.display = 'block';
+          A.bindEnter(uu, function () {
+            const cb = A.__pendingOK;
+            A.__pendingOK = null;
+            if (cb) cb(r);
+          });
+          return;
+        }
+        if (onOK) onOK(r);
+      };
+
+      if (isLogin) {
+        finish(AUTH.login(uu, p));
         return;
       }
-      if (onOK) onOK(r);
+
+      /* 注册：异步（云端验证） */
+      const nick = (document.getElementById('auNick') || {}).value || '';
+      const code = (document.getElementById('auCode') || {}).value || '';
+      btn.disabled = true;
+      const oldText = btn.textContent;
+      btn.textContent = '正在验证激活码…';
+      if (err) err.textContent = '';
+
+      AUTH.register(uu, p, nick.trim(), code).then(function (r) {
+        btn.disabled = false;
+        btn.textContent = oldText;
+        finish(r);
+      }).catch(function (e) {
+        btn.disabled = false;
+        btn.textContent = oldText;
+        if (err) err.textContent = '注册失败：' + e.message;
+      });
     };
 
     btn.onclick = submit;
