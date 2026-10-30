@@ -6513,47 +6513,105 @@ window.__EXAM = FAVOR.QUESTIONS;
   }
   function pick(arr, seed) { return arr[Math.abs(seed) % arr.length]; }
 
-  /* ---------------- 真实行政区数据 ---------------- */
-  function getProvinces() {
-    try {
-      const CH = window.CHINA_AREAS;
-      if (!CH) return [];
-      /* CHINA_AREAS 结构：{ '北京市': { '北京市': ['东城区',...] }, ... } */
-      return Object.keys(CH);
-    } catch (e) { return []; }
+  /* ---------------- 真实行政区数据 ----------------
+     结构：[ [省名, [ [市名, [区县...] ], ...] ], ... ]
+     ------------------------------------------------ */
+  let _cache = null;
+  function buildIndex() {
+    if (_cache) return _cache;
+    const CH = window.CHINA_AREAS || [];
+    const idx = { order: [], map: {} };
+
+    /* 直辖市：用省名作为「市」
+       港澳：手工补全（china-division 数据里没有） */
+    const MUNI = { '北京市': true, '上海市': true, '天津市': true, '重庆市': true };
+
+    const HK = {
+      '香港特别行政区': [
+        ['香港特别行政区', ['中西区', '湾仔区', '东区', '南区', '油尖旺区', '深水埗区',
+          '九龙城区', '黄大仙区', '观塘区', '葵青区', '荃湾区', '屯门区',
+          '元朗区', '北区', '大埔区', '沙田区', '西贡区', '离岛区']],
+      ],
+    };
+    const MO = {
+      '澳门特别行政区': [
+        ['澳门特别行政区', ['花地玛堂区', '圣安多尼堂区', '大堂区', '望德堂区',
+          '风顺堂区', '嘉模堂区', '圣方济各堂区', '路氹填海区']],
+      ],
+    };
+
+    const all = CH.map(x => [x[0], x[1] || []]).concat([[ '香港特别行政区', HK['香港特别行政区'] ], [ '澳门特别行政区', MO['澳门特别行政区'] ]]);
+
+    for (let i = 0; i < all.length; i++) {
+      const prov = all[i][0];
+      const cities = all[i][1] || [];
+      idx.order.push(prov);
+      idx.map[prov] = { order: [], map: {} };
+
+      if (MUNI[prov]) {
+        /* 直辖市：把「市辖区」等虚假市名合并为省名 */
+        const list = [];
+        for (let j = 0; j < cities.length; j++) {
+          (cities[j][1] || []).forEach(c => { if (list.indexOf(c) < 0) list.push(c); });
+        }
+        idx.map[prov].order.push(prov);
+        idx.map[prov].map[prov] = list;
+        continue;
+      }
+
+      for (let j = 0; j < cities.length; j++) {
+        let city = cities[j][0];
+        /* 「市辖区」「县」这类不是真市名 */
+        if (/^(市辖区|县|省直辖县级行政区划|自治区直辖县级行政区划)$/.test(city)) {
+          city = prov;   /* 用省名兜底 */
+        }
+        const list = (cities[j][1] || []).slice();
+        if (!idx.map[prov].map[city]) {
+          idx.map[prov].order.push(city);
+          idx.map[prov].map[city] = list;
+        } else {
+          idx.map[prov].map[city] = idx.map[prov].map[city].concat(list);
+        }
+      }
+    }
+    _cache = idx;
+    return idx;
   }
+  function getProvinces() { return buildIndex().order; }
   function getCities(prov) {
-    try {
-      const CH = window.CHINA_AREAS;
-      if (!CH || !CH[prov]) return [];
-      return Object.keys(CH[prov]);
-    } catch (e) { return []; }
+    const ix = buildIndex();
+    return ix.map[prov] ? ix.map[prov].order : [];
   }
   function getCounties(prov, city) {
-    try {
-      const CH = window.CHINA_AREAS;
-      if (!CH || !CH[prov] || !CH[prov][city]) return [];
-      return CH[prov][city] || [];
-    } catch (e) { return []; }
+    const ix = buildIndex();
+    if (!ix.map[prov]) return [];
+    return ix.map[prov].map[city] || [];
   }
 
   /* ---------------- 机构定义（真实党政机构） ---------------- */
   function orgsFor(area, lv) {
-    const npc = window.ADM ? ADM.npc(area) : area + '人大';
-    const cppcc = window.ADM ? ADM.cppcc(area) : area + '政协';
-    const cdi = window.ADM ? ADM.cdi(area) : area + '纪委监委';
-    const court = window.ADM ? ADM.court(area) : area + '人民法院';
-    const proc = window.ADM ? ADM.proc(area) : area + '人民检察院';
-    const top = window.ADM ? ADM.topTitle(area) : area + '委书记';
-    const head = window.ADM ? ADM.headTitle(area) : area + '长';
+    const A = window.ADM || null;
+    const npc = A ? A.npc(area) : area + '人大';
+    const cppcc = A ? A.cppcc(area) : area + '政协';
+    const cdi = A ? A.cdi(area) : area + '纪委监委';
+    const court = A ? A.court(area) : area + '人民法院';
+    const proc = A ? A.proc(area) : area + '人民检察院';
+    const top = A ? A.topTitle(area) : area + '委书记';
+    const head = A ? A.headTitle(area) : area + '长';
+
+    /* 港澳：没有「党委」，用行政长官 */
+    const isSAR = A && A.isSAR ? A.isSAR(area) : false;
+    const partyName = isSAR ? '行政长官（政府）' : top.replace(/书记$/, '') + '（党委）';
+    const partyTitle = isSAR ? '行政长官' : top;
+
     return [
-      { k: 'party',  n: top.replace(/书记$/, '') + '（党委）', ic: '党', col: '#8b2020', title: top },
+      { k: 'party',  n: partyName, ic: isSAR ? '首' : '党', col: '#8b2020', title: partyTitle },
       { k: 'gov',    n: head.replace(/长$/, '').replace(/司司长$/, '司') + '（政府）', ic: '政', col: '#2b6cb0', title: head },
-      { k: 'npc',    n: npc, ic: '人', col: '#6b477f', title: npc + '主任' },
-      { k: 'cppcc',  n: cppcc, ic: '协', col: '#8a6a33', title: cppcc + '主席' },
-      { k: 'cdi',    n: cdi, ic: '纪', col: '#3f7d5c', title: cdi + '书记' },
+      { k: 'npc',    n: npc, ic: '人', col: '#6b477f', title: npc + (isSAR ? '主席' : '主任') },
+      { k: 'cppcc',  n: cppcc, ic: '协', col: '#8a6a33', title: cppcc + (isSAR ? '议员' : '主席') },
+      { k: 'cdi',    n: cdi, ic: '纪', col: '#3f7d5c', title: cdi + (isSAR ? '专员' : '书记') },
       { k: 'court',  n: court, ic: '法', col: '#4a5f8a', title: court + '院长' },
-      { k: 'proc',   n: proc, ic: '检', col: '#5b3b6f', title: proc + '检察长' },
+      { k: 'proc',   n: proc, ic: '检', col: '#5b3b6f', title: proc + (isSAR ? '司长' : '检察长') },
     ];
   }
 
@@ -6639,8 +6697,8 @@ window.__EXAM = FAVOR.QUESTIONS;
       html += '</select>';
     }
 
-    /* 区县选择 */
-    if (lvOf(st.lv) >= 2 && counties.length) {
+    /* 区县选择（市级也显示，便于预览） */
+    if (lvOf(st.lv) >= 1 && counties.length) {
       html += '<select id="rmCounty" style="padding:4px 8px;border-radius:6px;border:1px solid ' + (st.lv === 'county' ? '#8a6a33' : 'var(--line)') + ';font-size:11.5px;background:#fffdfa;max-width:150px">';
       counties.forEach(c => {
         html += '<option value="' + c + '"' + (c === county ? ' selected' : '') + '>' + c + '</option>';
@@ -6781,6 +6839,7 @@ window.__EXAM = FAVOR.QUESTIONS;
     const cts = document.getElementById('rmCounty');
     if (cts) cts.onchange = () => {
       RM.state.county = cts.value;
+      RM.state.lv = 'county';   /* 选了区县 → 自动进入区县级 */
       RM.state.selOrg = null;
       rerender();
     };
