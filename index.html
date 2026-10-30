@@ -10691,6 +10691,232 @@ window.__EXAM = FAVOR.QUESTIONS;
 })();
 </script>
 <script>/* ============================================================
+   治理者之路 · 政绩档案 & 人生里程碑
+   把玩家做过的事按时间线整理，形成可回顾的履历
+   ============================================================ */
+(function () {
+  'use strict';
+  const ARCH = {};
+  window.ARCH = ARCH;
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  /* ---------------- 里程碑定义 ---------------- */
+  ARCH.MILESTONES = [
+    { k: 'first_post',  n: '入仕',           d: '第一次上任',            lv: 0, ic: '仕' },
+    { k: 'first_task',  n: '首件公文',       d: '完成第一个工作任务',     lv: 0, ic: '务' },
+    { k: 'level1',      n: '副科级',         d: '第一次提拔',            lv: 1, ic: '升' },
+    { k: 'level2',      n: '正科级',         d: '主政一个科室',          lv: 2, ic: '升' },
+    { k: 'first_fire',  n: '首次免职',       d: '第一次免掉一个人',       lv: 2, ic: '免' },
+    { k: 'level4',      n: '正处级',         d: '成为一方主官',          lv: 4, ic: '升' },
+    { k: 'first_proj',  n: '首个招商项目',   d: '谈成第一个招商项目',     lv: 4, ic: '商' },
+    { k: 'level6',      n: '副厅级',         d: '进入市级班子',          lv: 6, ic: '升' },
+    { k: 'level8',      n: '副部级',         d: '成为省级领导',          lv: 8, ic: '升' },
+    { k: 'level9',      n: '正部级',         d: '主政一省',              lv: 9, ic: '冠' },
+    { k: 'proj10',      n: '招商十强',       d: '累计投产 10 个项目',     lv: 4, ic: '商' },
+    { k: 'clean_year',  n: '清廉年',         d: '廉洁 85 以上满一年',     lv: 0, ic: '廉' },
+    { k: 'risk_free',   n: '零风险',         d: '任职 5 年风险始终 0',    lv: 0, ic: '安' },
+    { k: 'family',      n: '成家',           d: '结为配偶',              lv: 0, ic: '家' },
+    { k: 'child',       n: '添丁',           d: '有孩子',                lv: 0, ic: '子' },
+    { k: 'buy_car',     n: '提车',           d: '买了第一辆车',           lv: 0, ic: '车' },
+    { k: 'house',       n: '安家',           d: '买了第一套房',           lv: 0, ic: '房' },
+  ];
+
+  /* ---------------- 计算已达成 ---------------- */
+  ARCH.reached = function (g) {
+    const p = g.player;
+    const lv = p.level || 0;
+    const projs = (p.projects || []).filter(x => x.stage === 'done');
+    const m = {};
+    ARCH.MILESTONES.forEach(x => { m[x.k] = false; });
+
+    m.first_post = (p.history || []).length > 0;
+    m.first_task = (p.monthsWorked || 0) > 0;
+    m.level1 = lv >= 1;
+    m.level2 = lv >= 2;
+    m.level4 = lv >= 4;
+    m.level6 = lv >= 6;
+    m.level8 = lv >= 8;
+    m.level9 = lv >= 9;
+    m.first_fire = (p.enemies || []).length > 0;
+    m.first_proj = projs.length > 0;
+    m.proj10 = projs.length >= 10;
+    m.clean_year = (p.attrs && p.attrs.clean >= 85);
+    m.risk_free = (window.RISK ? RISK.get(g) : 0) === 0 && (p.monthsWorked || 0) >= 60;
+    m.family = !!(p.spouse);
+    m.child = !!((p.family && p.family.children && p.family.children.length));
+    m.buy_car = (p.garage || []).length > 0;
+    m.house = !!(p.house);
+    return m;
+  };
+
+  ARCH.progress = function (g) {
+    const r = ARCH.reached(g);
+    const total = ARCH.MILESTONES.length;
+    const done = ARCH.MILESTONES.filter(x => r[x.k]).length;
+    return { done, total, pct: Math.round(done / total * 100), map: r };
+  };
+
+  /* ---------------- 时间线 ---------------- */
+  ARCH.timeline = function (g) {
+    const p = g.player;
+    const items = [];
+
+    /* 履历 */
+    (p.history || []).forEach(h => {
+      items.push({ t: h, k: 'post', n: '任职' });
+    });
+
+    /* 任免通知 */
+    if (window.AP && AP.list) {
+      (AP.list(g) || []).forEach(x => {
+        if (x.self) items.push({ t: '你被任命为 ' + x.post, k: 'appoint', n: '任免' });
+      });
+    }
+
+    /* 项目台账 */
+    (p.projLog || []).forEach(x => {
+      items.push({ t: x.d + ' · ' + x.t, k: 'proj', n: '招商', date: x.d });
+    });
+
+    /* 风险事件 */
+    (p.riskLog || []).forEach(x => {
+      items.push({ t: x.date + ' · ' + x.note + '（风险 +' + x.v + '）', k: 'risk', n: '风险', date: x.date });
+    });
+
+    /* 工资记录（只取年终） */
+    (p.salaryLog || []).slice(-6).forEach(x => {
+      items.push({ t: x.date + ' · 工资到账 ¥' + Math.round(x.amount).toLocaleString('zh-CN'), k: 'money', n: '收入', date: x.date });
+    });
+
+    /* 按时间倒序（能解析日期的） */
+    return items.reverse().slice(0, 60);
+  };
+
+  /* ---------------- 政绩统计 ---------------- */
+  ARCH.stats = function (g) {
+    const p = g.player;
+    const projs = p.projects || [];
+    const done = projs.filter(x => x.stage === 'done');
+    const totalInv = done.reduce((a, b) => a + (b.inv || 0), 0);
+    const totalTax = done.reduce((a, b) => a + (b.tax || 0), 0);
+    const totalJobs = done.reduce((a, b) => a + (b.jobs || 0), 0);
+    const taskDone = (p.taskLog || []).length || 0;
+
+    return {
+      months: p.monthsWorked || 0,
+      tenure: p.tenureInLevel || 0,
+      projects: done.length,
+      invest: totalInv,
+      tax: totalTax,
+      jobs: totalJobs,
+      tasks: taskDone,
+      risk: window.RISK ? RISK.get(g) : 0,
+      clean: Math.round((p.attrs && p.attrs.clean) || 0),
+      exam: Math.round((p.exam || 0) * 10) / 10,
+      perf: Math.round((p.perf || 0) * 10) / 10,
+      netWorth: Math.round((p.netWorth || 0) * 10) / 10,
+    };
+  };
+
+  /* ---------------- 渲染 ---------------- */
+  ARCH.render = function (g) {
+    const p = g.player;
+    const lv = p.level || 0;
+    const prog = ARCH.progress(g);
+    const st = ARCH.stats(g);
+    const tl = ARCH.timeline(g);
+    const C = window.LVNAMES || [];
+    const lvName = C[lv] || '科员';
+
+    let html = '';
+
+    /* 顶部：达成度 */
+    html += '<div class="card">' +
+      '<div class="ch"><span class="ic green">档</span><h3>政绩档案</h3>' +
+      '<span class="tail">' + lvName + ' · 任职 ' + st.months + ' 个月</span></div>';
+
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' +
+      '<div style="font-size:28px;font-weight:700;color:#5b3b6f;font-variant-numeric:tabular-nums">' + prog.done +
+      '<span style="font-size:14px;color:#a89878">/' + prog.total + '</span></div>' +
+      '<div style="flex:1">' +
+        '<div class="prog" style="height:7px"><i style="width:' + prog.pct + '%;background:linear-gradient(90deg,#9a79bd,#5b3b6f)"></i></div>' +
+        '<div class="sm dim" style="margin-top:3px">里程碑达成 ' + prog.pct + '%</div>' +
+      '</div></div>';
+
+    /* 关键数据 */
+    html += '<div class="row flex" style="gap:8px;flex-wrap:wrap">' +
+      '<div class="stat" style="flex:1 1 120px"><div class="lab">招商投产</div><div class="val">' + st.projects + ' <span class="sm dim">个</span></div></div>' +
+      '<div class="stat" style="flex:1 1 120px"><div class="lab">累计投资</div><div class="val">' + st.invest.toFixed(1) + ' <span class="sm dim">亿</span></div></div>' +
+      '<div class="stat" style="flex:1 1 120px"><div class="lab">带动就业</div><div class="val">' + st.jobs + ' <span class="sm dim">人</span></div></div>' +
+      '<div class="stat" style="flex:1 1 120px"><div class="lab">廉洁</div><div class="val" style="color:' + (st.clean >= 70 ? '#3f7d5c' : st.clean >= 50 ? '#8a6a33' : '#a5463e') + '">' + st.clean + '</div></div>' +
+      '<div class="stat" style="flex:1 1 120px"><div class="lab">风险</div><div class="val" style="color:' + (st.risk >= 70 ? '#a5463e' : st.risk >= 50 ? '#8a6a33' : '#3f7d5c') + '">' + st.risk + '</div></div>' +
+      '<div class="stat" style="flex:1 1 120px"><div class="lab">净资产</div><div class="val">' + st.netWorth + ' <span class="sm dim">万</span></div></div>' +
+      '</div>';
+    html += '</div>';
+
+    /* 里程碑 */
+    html += '<div class="card">' +
+      '<div class="ch"><span class="ic gold" style="background:#fdf4e4;color:#8a6a33">程</span><h3>人生里程碑</h3>' +
+      '<span class="tail">' + prog.done + ' / ' + prog.total + '</span></div>';
+
+    const reached = prog.map;
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:7px">';
+    ARCH.MILESTONES.forEach(x => {
+      const got = reached[x.k];
+      const need = x.lv > 0 && lv < x.lv;
+      html += '<div style="border:1px solid ' + (got ? '#b8d9c4' : 'var(--line)') + ';' +
+        'background:' + (got ? '#f2f9f4' : '#fffdfa') + ';border-radius:9px;padding:8px 9px;' +
+        (need ? 'opacity:.45;' : '') + '">' +
+        '<div style="display:flex;align-items:center;gap:5px">' +
+          '<span style="width:17px;height:17px;border-radius:5px;display:grid;place-items:center;font-size:9px;flex:none;' +
+            'background:' + (got ? '#4a8c5c' : '#efe8dc') + ';color:' + (got ? '#fff' : '#a89878') + '">' +
+            (got ? '✓' : x.ic) + '</span>' +
+          '<b style="font-size:11.5px;color:' + (got ? '#3f7d5c' : '#7a7186') + '">' + x.n + '</b>' +
+        '</div>' +
+        '<div style="font-size:9.5px;color:#a89878;margin-top:2px;line-height:1.4">' +
+          (got ? x.d : (need ? '需 ' + (C[x.lv] || '') + ' 以上' : x.d)) + '</div>' +
+      '</div>';
+    });
+    html += '</div></div>';
+
+    /* 时间线 */
+    if (tl.length) {
+      html += '<div class="card">' +
+        '<div class="ch"><span class="ic blue">线</span><h3>履历时间线</h3>' +
+        '<span class="tail">最近 ' + tl.length + ' 条</span></div>';
+      const KIND = {
+        post: ['#6b477f', '任'],
+        appoint: ['#2b6cb0', '免'],
+        proj: ['#3f7d5c', '商'],
+        risk: ['#a5463e', '险'],
+        money: ['#8a6a33', '薪'],
+      };
+      html += '<div style="position:relative;padding-left:16px">' +
+        '<div style="position:absolute;left:5px;top:4px;bottom:4px;width:1px;background:linear-gradient(180deg,#c9b8d8,transparent)"></div>' +
+        tl.map(x => {
+          const kc = KIND[x.k] || ['#7a7186', '记'];
+          return '<div style="position:relative;padding:4px 0 8px">' +
+            '<span style="position:absolute;left:-13px;top:6px;width:8px;height:8px;border-radius:50%;background:' + kc[0] + '"></span>' +
+            '<div style="font-size:11.5px;line-height:1.5;color:#5b3b6f">' + x.t + '</div>' +
+            '</div>';
+        }).join('') +
+        '</div></div>';
+    } else {
+      html += '<div class="card"><div class="ch"><span class="ic blue">线</span><h3>履历时间线</h3></div>' +
+        '<p class="sm dim" style="margin:0">还没有记录。做任务、升职、招商都会记在这里。</p></div>';
+    }
+
+    return html;
+  };
+
+  /* ---------------- 绑定 ---------------- */
+  ARCH.bind = function (g) {
+    /* 纯展示，无需绑定 */
+  };
+})();
+</script>
+<script>/* ============================================================
    治理者之路 · 职级与排行榜
    正国级 → 副国级 → 正部级 → 省部级 → … → 科员
    ============================================================ */
@@ -12173,7 +12399,7 @@ function seededRand(str) {
     ['home', '首', '首页'], ['web', '网', '政府网站'],
     ['faction', '派', '派系'], ['city', '市', '全国城市'],
     ['county', '县', '本县数据'], ['people', '人', '人物关系'], ['social', '往', '人际往来'],
-    ['appoint', '免', '任免通知'], ['discipline', '纪', '纪律审查'], ['project', '商', '招商引资'],
+    ['appoint', '免', '任免通知'], ['discipline', '纪', '纪律审查'], ['project', '商', '招商引资'], ['archive', '档', '政绩档案'],
     ['life', '生', '人生'], ['market', '市', '市场'], ['rank', '榜', '排行榜'], ['map', '图', '全国地图'], ['plan', '规', '城市规划'],
     ['org', '构', '组织架构'], ['chron', '记', '大事记'], ['tutor', '册', '教程'],
   ];
@@ -12197,7 +12423,23 @@ function seededRand(str) {
     $('#game').classList.remove('hidden');
     $('#setup').classList.add('hidden');
     const p = G.player;
-    $('#apLabel').textContent = `行动点 ${p.ap}/${p.apMax}`;
+    $('#apLabel').textContent = '行动点 ' + p.ap + '/' + p.apMax;
+    /* 行动点用完 → 高亮提示推进 */
+    (function () {
+      const el = document.getElementById('apLabel');
+      if (!el) return;
+      if ((p.ap || 0) <= 0) {
+        el.style.background = '#fdf0e8';
+        el.style.color = '#a5463e';
+        el.style.fontWeight = '700';
+        el.title = '行动点用完，点「推进一周」结算';
+      } else {
+        el.style.background = '';
+        el.style.color = '';
+        el.style.fontWeight = '';
+        el.title = '';
+      }
+    })();
     $('#dateLabel').textContent = dateStr();
     $('#seedLabel').textContent = '种子 ' + G.seed;
     $('#navs').innerHTML = NAV.map(([k, i, n, badge]) =>
@@ -12248,6 +12490,7 @@ function seededRand(str) {
     $('#btnTutor').onclick = () => { PAGE = 'tutor'; renderGame(); };
     bindActions();
     if (window.PROJ && PAGE === 'project') PROJ.bind(G);
+    if (window.ARCH && PAGE === 'archive') ARCH.bind(G);
     if (window.__boot) window.__boot.done();
 
     /* 强制问话层 */
@@ -12460,6 +12703,7 @@ function seededRand(str) {
           title="${a.desc}">${a.n}（${a.cost} 点）${a.add ? `<span class="p">+${a.add}</span>` : ''}</button>`).join('')}
       </div>
       <div class="flex g6" style="margin-top:10px">
+        <div id="apWarn" style="display:none;margin-bottom:7px;padding:7px 10px;border-radius:8px;background:#fdf0e8;border:1px solid #e8cfc0;font-size:11.5px;color:#a5463e">行动点已用完 —— 点下面「推进一周」进入下一周</div>
         <button class="btn primary grow" id="btnNextWeek" style="padding:9px">推进一周</button>
       </div>
     </div>`;
@@ -12531,6 +12775,7 @@ function seededRand(str) {
     appoint: () => (window.renderAppoint ? renderAppoint(G) : '<p class="sm dim">任免通知未加载</p>'),
     discipline: () => (window.renderDiscipline ? renderDiscipline(G) : '<p class="sm dim">纪律审查未加载</p>'),
     project: () => (window.PROJ ? PROJ.render(G) : '<p class="sm dim">招商模块未加载</p>'),
+    archive: () => (window.ARCH ? ARCH.render(G) : '<p class="sm dim">档案模块未加载</p>'),
     second: () => `<div class="card"><div class="ch"><span class="ic">借</span><h3>借调</h3></div>
       <p class="sm dim">借调能开阔眼界，但容易两头不落好。</p>
       <div style="border:1px solid var(--line);border-radius:9px;padding:8px 12px">市委组织部干部科借调（3 个月）<div class="sm dim">经验 +5 · 考察分 +0.5 · 暂停本级晋升</div></div></div>`,
@@ -12639,6 +12884,10 @@ function seededRand(str) {
     });
     const nw = $('#btnNextWeek');
     if (nw) nw.onclick = nextWeek;
+    (function () {
+      const w = document.getElementById('apWarn');
+      if (w) w.style.display = (p.ap || 0) <= 0 ? 'block' : 'none';
+    })();
     document.querySelectorAll('[data-marry]').forEach(e => e.onclick = () => {
       const i = Number(e.dataset.marry);
       const c = (G.candidates || [])[i];
@@ -12907,13 +13156,62 @@ function seededRand(str) {
     });
     /* ==== 任务 ==== */
     document.querySelectorAll('[data-task]').forEach(e => e.onclick = () => {
+      const before = {
+        exam: G.player.exam || 0, perf: G.player.perf || 0,
+        ap: G.player.ap || 0, net: G.player.netWorth || 0,
+      };
       const r = TASK.run(G, Number(e.dataset.task));
       if (!r.ok) { toast(r.msg); return; }
-      toast(r.task.name.replace('N', r.task.need) + '：' + r.task.done + '/' + r.task.need);
+      /* 计算本次收益 */
+      const dExam = Math.round(((G.player.exam || 0) - before.exam) * 10) / 10;
+      const dPerf = Math.round(((G.player.perf || 0) - before.perf) * 10) / 10;
+      const dAp = (G.player.ap || 0) - before.ap;
+      const dNet = Math.round(((G.player.netWorth || 0) - before.net) * 10) / 10;
+      const gains = [];
+      if (dExam > 0) gains.push('考察分 +' + dExam);
+      if (dPerf > 0) gains.push('绩效 +' + dPerf);
+      if (dNet !== 0) gains.push('净资产 ' + (dNet > 0 ? '+' : '') + dNet + ' 万');
+      const gTxt = gains.length ? gains.join(' · ') : '';
+      const nm = String(r.task.name).replace(/N/g, r.task.need);
+      toast(nm + ' ' + r.task.done + '/' + r.task.need + (gTxt ? '　' + gTxt : ''));
       save(); renderGame();
       if (r.done) modal('任务完成', '<p style="margin:0 0 10px">本岗位任务全部完成，已经具备提拔条件。</p>' +
         '<p class="sm dim">现在可以去「晋升」卡片申请提拔，通过后自己挑职位。</p>', [{ n: '好', c: 'primary' }]);
     });
+    /* ==== 一键执行全部任务 ==== */
+    const oneKey = document.getElementById('btnTaskAll');
+    if (oneKey) oneKey.onclick = () => {
+      const p = G.player;
+      if (!p.tasks || !p.tasks.length) { toast('没有任务'); return; }
+      let ran = 0, stop = false;
+      const snap = { exam: p.exam || 0, perf: p.perf || 0, net: p.netWorth || 0 };
+      for (const t of p.tasks) {
+        if (stop) break;
+        if (t.done >= t.need) continue;
+        /* 一直重复直到行动点不足 */
+        let guard = 0;
+        while (t.done < t.need && guard++ < 50) {
+          const r = TASK.run(G, t.id);
+          if (!r.ok) { stop = true; break; }
+          ran++;
+        }
+      }
+      if (!ran) { toast('行动点不够，先推进一周'); return; }
+      const dExam = Math.round(((p.exam || 0) - snap.exam) * 10) / 10;
+      const dPerf = Math.round(((p.perf || 0) - snap.perf) * 10) / 10;
+      const dNet = Math.round(((p.netWorth || 0) - snap.net) * 10) / 10;
+      const gs = [];
+      if (dExam > 0) gs.push('考察分 +' + dExam);
+      if (dPerf > 0) gs.push('绩效 +' + dPerf);
+      if (dNet !== 0) gs.push('净资产 ' + (dNet > 0 ? '+' : '') + dNet + ' 万');
+      toast('批量执行 ' + ran + ' 次　剩余行动点 ' + (p.ap || 0) + (gs.length ? '　' + gs.join(' · ') : ''));
+      save(); renderGame();
+      if (TASK.allDone(G)) {
+        modal('任务全部完成', '<p style="margin:0 0 10px">本岗位任务全部完成，已经具备提拔条件。</p>' +
+          '<p class="sm dim">现在可以去「晋升」卡片申请提拔。</p>', [{ n: '好', c: 'primary' }]);
+      }
+    };
+
     /* ==== 风险：打点 ==== */
     document.querySelectorAll('[data-appease]').forEach(e => e.onclick = () => {
       const p = G.player;
@@ -13171,22 +13469,45 @@ function seededRand(str) {
     return `<div class="card">
       <div class="ch"><span class="ic orange">升</span><h3>晋升</h3>
         <span class="tail">${cur.name} · 权力分 ${cur.power}</span></div>
-      ${next ? `
+      ${next ? (() => {
+        /* 四项硬条件 + 差距提示 */
+        const riskNow = (window.RISK ? RISK.get(G) : 0);
+        const riskOK = riskNow < 70;
+        const tasksOK = (window.TASK ? TASK.allDone(G) : true);
+        const taskPct = (window.TASK ? Math.round(TASK.progress(G) * 100) : 100);
+        const missTerm = Math.max(0, cur.term - tenure);
+        const missScore = Math.max(0, next.need - p.examPts);
+
+        /* 一行式条件清单 */
+        const chips = [
+          { n: '任职', ok: termOK, txt: termOK ? '已满' : '差 ' + missTerm + ' 月' },
+          { n: '考察', ok: scoreOK, txt: scoreOK ? '达标' : '差 ' + missScore.toFixed(1) },
+          { n: '任务', ok: tasksOK, txt: tasksOK ? '完成' : taskPct + '%' },
+          { n: '风险', ok: riskOK, txt: riskNow + '/70' },
+        ];
+        const chipHtml = chips.map(c =>
+          '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:6px;font-size:10.5px;' +
+          'background:' + (c.ok ? '#e6f2e9' : '#fdf0e8') + ';color:' + (c.ok ? '#3f7d5c' : '#a5463e') + '">' +
+          (c.ok ? '✓' : '·') + ' ' + c.n + ' ' + c.txt + '</span>'
+        ).join('');
+
+        return `
       <div class="kv"><span>下一级</span><span><b>${next.name}</b>（权力分 ${next.power}）</span></div>
-      <div style="margin:8px 0">
-        <div class="flex" style="justify-content:space-between;font-size:12px;color:#7a7186">
-          <span>任职年限 ${tenure} / ${cur.term} 个月</span><span>${termOK ? '✓ 已满' : '未满'}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin:9px 0 8px">${chipHtml}</div>
+      <div style="margin:6px 0">
+        <div class="flex" style="justify-content:space-between;font-size:11px;color:#7a7186">
+          <span>任职年限 ${tenure} / ${cur.term} 个月</span><span>${termOK ? '✓ 已满' : '还差 ' + missTerm + ' 个月'}</span></div>
         <div class="prog" style="margin-top:3px"><i style="width:${termPct}%;background:${termOK ? '#4a8c5c' : '#9a79bd'}"></i></div>
       </div>
-      <div style="margin:8px 0">
-        <div class="flex" style="justify-content:space-between;font-size:12px;color:#7a7186">
-          <span>考察分 ${p.examPts.toFixed(1)} / ${next.need}</span><span>${scoreOK ? '✓ 达标' : '不够'}</span></div>
+      <div style="margin:6px 0">
+        <div class="flex" style="justify-content:space-between;font-size:11px;color:#7a7186">
+          <span>考察分 ${p.examPts.toFixed(1)} / ${next.need}</span><span>${scoreOK ? '✓ 达标' : '还差 ' + missScore.toFixed(1) + ' 分'}</span></div>
         <div class="prog" style="margin-top:3px"><i style="width:${scorePct}%;background:${scoreOK ? '#4a8c5c' : '#c99a5b'}"></i></div>
       </div>
-      <button class="btn ${ready ? 'primary' : ''}" style="width:100%;margin-top:6px" id="btnPromote"
-        ${ready ? '' : 'disabled'}>${ready ? '申请提拔 →' : termOK ? '考察分不够，继续走动' : '任职年限未满'}</button>
-      <p class="sm dim" style="margin:8px 0 0">达标后点申请，有概率通过；也可以等「推进一周」自动触发。</p>
-      ` : `<p class="note">已经是省委书记（权力分 100），到顶了。</p>`}
+      <button class="btn ${ready ? 'primary' : ''}" style="width:100%;margin-top:8px" id="btnPromote"
+        ${ready ? '' : 'disabled'}>${ready ? '申请提拔 →' : (termOK ? (scoreOK ? (tasksOK ? (riskOK ? '可以申请' : '风险过高，先降风险') : '任务未完成') : '考察分不够') : '任职年限未满')}</button>
+      <p class="sm dim" style="margin:8px 0 0;font-size:10.5px">四项缺一不可。达标后点申请，有概率通过；也可等「推进一周」自动触发。</p>`;
+      })() : `<p class="note">已经是省委书记（权力分 100），到顶了。</p>`}
     </div>`;
   }
 
