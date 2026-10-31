@@ -5944,7 +5944,11 @@ window.__EXAM = FAVOR.QUESTIONS;
     return `<div class="card">
       <div class="ch"><span class="ic orange">务</span><h3>工作任务</h3>
         <span class="tail">${all ? '✅ 全部完成' : Math.round(TASK.progress(g) * 100) + '%'}</span></div>
-      <p class="sm dim" style="margin:0 0 8px;font-size:10.5px">全部做完才能提拔</p>
+      <div style="display:flex;align-items:center;gap:7px;margin:0 0 8px">
+        <p class="sm dim" style="margin:0;font-size:10.5px;flex:1">全部做完才能提拔</p>
+        <button class="btn sm" onclick="window.__doTaskAll && window.__doTaskAll()"
+          style="padding:2px 9px;font-size:10.5px;flex:none">一键做（${p.ap || 0} 点）</button>
+      </div>
       ${p.tasks.map(t => {
         const done = t.done >= t.need;
         const pct = Math.min(100, t.done / t.need * 100);
@@ -5957,7 +5961,9 @@ window.__EXAM = FAVOR.QUESTIONS;
             </span>
             <span style="font-size:11px;font-variant-numeric:tabular-nums;color:${done ? '#3f7d5c' : '#8a6a33'};flex:none;min-width:56px;text-align:right">${t.done}/${t.need} ${t.unit}</span>
             ${done ? '<span style="font-size:10px;color:#3f7d5c;flex:none">✓</span>'
-              : `<button class="btn sm ${(p.ap || 0) >= t.ap ? 'primary' : ''}" data-task="${t.id}" style="flex:none;padding:2px 10px;font-size:11px"
+              : `<button class="btn sm ${(p.ap || 0) >= t.ap ? 'primary' : ''}" data-task="${t.id}"
+                  onclick="window.__doTask && window.__doTask(${t.id})"
+                  style="flex:none;padding:2px 10px;font-size:11px"
                   ${(p.ap || 0) < t.ap ? 'disabled' : ''}>${t.ap}点</button>`}
           </div>
           ${t.desc ? `<div style="font-size:9.5px;color:#a89878;margin-top:2px">${t.desc}</div>` : ''}
@@ -12501,6 +12507,15 @@ function seededRand(str) {
       if (window.__saveHintTimer) clearInterval(window.__saveHintTimer);
       window.__saveHintTimer = setInterval(tick, 5000);
     })();
+    /* 保险：空弹窗层不拦截点击 */
+    (function () {
+      ['modalHost', 'discHost'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (!el.innerHTML.trim()) el.style.pointerEvents = 'none';
+        else el.style.pointerEvents = '';
+      });
+    })();
     $('#btnSettings').onclick = () => modal('设置', '<p>静态复刻版：无服务器，存档在本机浏览器。</p>');
     $('#btnTutor').onclick = () => { PAGE = 'tutor'; renderGame(); };
     bindActions();
@@ -12874,6 +12889,61 @@ function seededRand(str) {
   PAGE_VIEW.home = () => '';
 
   /* ---------- 交互 ---------- */
+  /* ================= 任务执行（内联 onclick 用） ================= */
+  window.__doTask = function (taskId) {
+    if (!G || !G.player) return;
+    const before = {
+      exam: G.player.exam || 0, perf: G.player.perf || 0,
+      ap: G.player.ap || 0, net: G.player.netWorth || 0,
+    };
+    const r = TASK.run(G, Number(taskId));
+    if (!r.ok) { toast(r.msg); return; }
+    const dExam = Math.round(((G.player.exam || 0) - before.exam) * 10) / 10;
+    const dPerf = Math.round(((G.player.perf || 0) - before.perf) * 10) / 10;
+    const dNet = Math.round(((G.player.netWorth || 0) - before.net) * 10) / 10;
+    const gains = [];
+    if (dExam > 0) gains.push('考察分 +' + dExam);
+    if (dPerf > 0) gains.push('绩效 +' + dPerf);
+    if (dNet !== 0) gains.push('净资产 ' + (dNet > 0 ? '+' : '') + dNet + ' 万');
+    const nm = String(r.task.name).replace(/N/g, r.task.need);
+    toast(nm + ' ' + r.task.done + '/' + r.task.need + (gains.length ? '　' + gains.join(' · ') : ''));
+    save();
+    renderGame();
+    if (r.done) {
+      setTimeout(function () {
+        modal('任务完成', '<p style="margin:0 0 10px">本岗位任务全部完成，已经具备提拔条件。</p>' +
+          '<p class="sm dim">现在可以去「晋升」卡片申请提拔。</p>', [{ n: '好', c: 'primary' }]);
+      }, 120);
+    }
+  };
+
+  window.__doTaskAll = function () {
+    if (!G || !G.player) return;
+    const p = G.player;
+    if (!p.tasks || !p.tasks.length) { toast('没有任务'); return; }
+    const snap = { exam: p.exam || 0, perf: p.perf || 0, net: p.netWorth || 0 };
+    let ran = 0, stop = false;
+    for (const t of p.tasks) {
+      if (stop) break;
+      if (t.done >= t.need) continue;
+      let guard = 0;
+      while (t.done < t.need && guard++ < 100) {
+        const r = TASK.run(G, t.id);
+        if (!r.ok) { stop = true; break; }
+        ran++;
+      }
+    }
+    if (!ran) { toast('行动点不够，先推进一周'); return; }
+    const dExam = Math.round(((p.exam || 0) - snap.exam) * 10) / 10;
+    const dPerf = Math.round(((p.perf || 0) - snap.perf) * 10) / 10;
+    const gs = [];
+    if (dExam > 0) gs.push('考察分 +' + dExam);
+    if (dPerf > 0) gs.push('绩效 +' + dPerf);
+    toast('批量执行 ' + ran + ' 次　剩余行动点 ' + (p.ap || 0) + (gs.length ? '　' + gs.join(' · ') : ''));
+    save();
+    renderGame();
+  };
+
   function bindActions() {
     $$('[data-nav]').forEach(e => e.onclick = ev => { ev.preventDefault(); PAGE = e.dataset.nav; renderGame(); });
     $$('[data-detail]').forEach(e => e.onclick = () => {
@@ -13170,7 +13240,10 @@ function seededRand(str) {
       if (c && window.drawTown) setTimeout(() => drawTown(c, G), 40);
     });
     /* ==== 任务 ==== */
-    document.querySelectorAll('[data-task]').forEach(e => e.onclick = () => {
+    /* 诊断：记录任务按钮数量 */
+    const _taskBtns = document.querySelectorAll('[data-task]');
+    if (window.__DEBUG_TASK) console.log('[bindActions] 找到任务按钮:', _taskBtns.length, '| 任务数:', (G.player.tasks||[]).length);
+    _taskBtns.forEach(e => e.onclick = () => {
       const before = {
         exam: G.player.exam || 0, perf: G.player.perf || 0,
         ap: G.player.ap || 0, net: G.player.netWorth || 0,
