@@ -9633,7 +9633,12 @@ window.__EXAM = FAVOR.QUESTIONS;
         const s = String(t || '');
         /* 一把手：各级书记 */
         if (/省委书记|自治区党委书记/.test(s)) return 9;
-        if (/市委书记|县委书记|区委书记|旗委书记/.test(s)) return 6;
+        /* 团委书记不是党委书记，先排除 */
+        if (/团委书记|团市委|团县委|团区委/.test(s)) return 3;
+        if (/市委书记/.test(s)) return 6;
+        /* 排除开发区/园区/新区管委会这类不是行政区党委书记的职务 */
+        if (/开发区|园区|新区|高新区|经济区|管理区|试验区|示范区/.test(s)) return 5;
+        if (/县委书记|区委书记|旗委书记/.test(s)) return 4;
         /* 省级 */
         if (/省委副书记|省政协主席|省人大常委会主任/.test(s)) return 8;
         if (/省长/.test(s)) return 8;
@@ -9675,7 +9680,7 @@ window.__EXAM = FAVOR.QUESTIONS;
           /* 市委书记 → 省委书记 */
           if (/^市委书记$/.test(ftitle)) return { t: ((prov2 || '本省').replace(/省$/, '')) + '省委书记', lv: 9, kind: 'prov' };
           /* 县委书记 / 区委书记 → 市委书记 */
-          if (/县委书记|区委书记|旗委书记/.test(ftitle)) return { t: ((city2 || '本市').replace(/市$/, '')) + '市委书记', lv: 6, kind: 'city' };
+          if (/县委书记|区委书记|旗委书记/.test(ftitle) && !/团委/.test(ftitle)) return { t: ((city2 || '本市').replace(/市$/, '')) + '市委书记', lv: 6, kind: 'city' };
           /* 市长 / 县长 / 区长 → 同级党委书记 */
           if (/市长$|县长$|区长$|旗长$/.test(ftitle)) {
             if (/^市长$/.test(ftitle)) return { t: ((city2 || '本市').replace(/市$/, '')) + '市委书记', lv: 6, kind: 'city' };
@@ -9683,7 +9688,7 @@ window.__EXAM = FAVOR.QUESTIONS;
           }
           /* 市人大主任 / 市政协主席 → 市委书记 */
           if (/市人大常委会|市政协/.test(ftitle)) return { t: ((city2 || '本市').replace(/市$/, '')) + '市委书记', lv: 6, kind: 'city' };
-          if (/区人大常委会|区政协|县人大常委会|县政协/.test(ftitle)) return { t: ((county2 || '本区').replace(/(区|县|市)$/, '')) + (String(county2||'').endsWith('县') ? '县委书记' : '区委书记'), lv: 4, kind: 'county' };
+          if (/区人大常委会|区政协|县人大常委会|县政协/.test(ftitle) && !/开发区|园区|新区|高新区/.test(ftitle)) return { t: ((county2 || '本区').replace(/(区|县|市)$/, '')) + (String(county2||'').endsWith('县') ? '县委书记' : '区委书记'), lv: 4, kind: 'county' };
           /* 省人大 / 省政协（含副职）→ 省委书记 */
           if (/省人大常委会/.test(ftitle)) return { t: ((prov2 || '本省').replace(/省$/, '')) + '省委书记', lv: 9, kind: 'prov' };
           if (/省政协/.test(ftitle)) return { t: ((prov2 || '本省').replace(/省$/, '')) + '省委书记', lv: 9, kind: 'prov' };
@@ -12425,6 +12430,13 @@ function seededRand(str) {
     }
     $('#game').classList.remove('hidden');
     $('#setup').classList.add('hidden');
+    /* 隐藏登录/存档确认页（否则会盖住游戏，导致点不动） */
+    (function () {
+      const ah = document.getElementById('authHost');
+      if (ah) { ah.style.display = 'none'; ah.innerHTML = ''; }
+      const dh = document.getElementById('discHost');
+      if (dh) dh.style.display = '';   /* 纪律审查层由 DC 控制 */
+    })();
     const p = G.player;
     $('#apLabel').textContent = '行动点 ' + p.ap + '/' + p.apMax;
     /* 行动点用完 → 高亮提示推进 */
