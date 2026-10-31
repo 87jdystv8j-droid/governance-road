@@ -2101,6 +2101,17 @@ FY.randomProvince = function (rnd) {
   const TRAITS = ['闷葫芦', '急性子', '稳得住', '话不多但准', '好说话', '认死理', '会来事', '记性好', '爱加班', '护下属'];
 
   /* 为一个人生成完整档案（按姓名哈希，稳定不重复） */
+  /* ================= 档案缓存（保证同一个人永远一致） ================= */
+  PX._cache = {};
+  PX.cached = function (name, opts) {
+    const k = String(name);
+    if (PX._cache[k]) return PX._cache[k];
+    const pr = PX.profile(name, opts);
+    PX._cache[k] = pr;
+    return pr;
+  };
+  PX.clearCache = function () { PX._cache = {}; };
+
   PX.profile = function (name, opts) {
     const o = opts || {};
     const r = sd('prof|' + name + '|' + (o.seed || ''));
@@ -2442,7 +2453,8 @@ FY.randomProvince = function (rnd) {
 
   window.renderPersonCard = function (p, extra) {
     const o = extra || {};
-    const pr = PX.profile(p.name, { age: p.age, edu: p.edu, lv: (typeof p.lv === 'number' && p.lv > 0) ? p.lv : lvFromTitle(p.title), curTitle: String(p.title || '').trim(), province: o.province || '', city: o.city || '', area: o.area || '' });
+    /* 用缓存：同一个人每次打开都一样 */
+    const pr = PX.cached(p.name, { age: p.age, edu: p.edu, lv: (typeof p.lv === 'number' && p.lv > 0) ? p.lv : lvFromTitle(p.title), curTitle: String(p.title || '').trim(), province: o.province || '', city: o.city || '', area: o.area || '' });
     const bar = (label, v, note) =>
       '<div style="text-align:center"><div class="sm dim" style="font-size:10px">' + label + '</div>' +
       '<div style="font-size:17px;font-weight:700;color:' + (v >= 70 ? '#3f7d5c' : v >= 50 ? '#8a6a33' : '#a5463e') + '">' + v +
@@ -2696,7 +2708,29 @@ FY.randomProvince = function (rnd) {
       if (/副科长|副局长/.test(s)) return 1;
       return 0;
     };
-    let person = PL ? PL.roster(g).list.find(function (x) { return x.name === name; }) : null;
+    /* 优先从组织架构里找这个人（那里有完整、稳定的数据） */
+    let person = null;
+    const _x0 = window.ORGX2 ? ORGX2.build(g) : null;
+    if (_x0) {
+      const _all = [];
+      _x0.cols.forEach(function (c) { c.seats.forEach(function (s) { _all.push(s); }); });
+      const hit = _all.filter(function (s) { return s && s.name === name; })[0];
+      if (hit) {
+        person = {
+          id: hit.id != null ? hit.id : -1,
+          name: hit.name,
+          title: hit.title || title || '',
+          lv: (typeof hit.lv === 'number' && hit.lv > 0) ? hit.lv : lvNum(hit.title),
+          rel: 'down', favor: 50,
+          sex: hit.sex || '男',
+          age: hit.age,
+          edu: hit.edu,
+          faction: hit.faction,
+          supervise: hit.supervise,
+        };
+      }
+    }
+    if (!person && PL) person = PL.roster(g).list.find(function (x) { return x.name === name; });
     if (!person) person = { id: -1, name: name, title: title || '', lv: lvNum(title), rel: 'down', favor: 50, sex: '男' };
     else if (title) person = Object.assign({}, person, { title: title });
 
@@ -2707,14 +2741,51 @@ FY.randomProvince = function (rnd) {
     if (x) {
       const all = [];
       x.cols.forEach(function (c) { c.seats.forEach(function (s) { all.push(s); }); });
-      /* 上级 */
+      /* ---- 上级：按职务层级严格匹配，不靠"职级最低"猜 ---- */
+      const myTitle = String(person.title || '');
+      const findSeat = function (re) {
+        for (let i2 = 0; i2 < all.length; i2++) {
+          const s = all[i2];
+          if (s && s.name && s.name !== name && re.test(s.title || '')) return s;
+        }
+        return null;
+      };
+
       if (myLv >= 10) {
         superior = { name: '—', title: '无上级（党和国家领导人）', none: true };
-        subs = [];
-        all.forEach(function (s) { if (s.name !== name && s.name) subs.push({ name: s.name, title: s.title }); });
-      } else if (!/省委书记|自治区党委书记/.test(person.title || '')) {
-        let top = null;
-        all.forEach(function (s) { if (s.name !== name && /省委书记|自治区党委书记/.test(s.title || '')) top = s; });
+      } else if (/省委书记|自治区党委书记|行政长官/.test(myTitle)) {
+        /* 省委书记：无上级 */
+        superior = { name: '—', title: '无上级（一方主官）', none: true };
+      } else if (/市委书记$/.test(myTitle)) {
+        /* 市委书记 → 省委书记 */
+        const s = findSeat(/省委书记|自治区党委书记/);
+        superior = s ? { name: s.name, title: s.title } : { name: '—', title: '无上级', none: true };
+      } else if (/^市长$/.test(myTitle)) {
+        /* 市长 → 市委书记 */
+        const s = findSeat(/^市委书记$|市委书记$/);
+        superior = s ? { name: s.name, title: s.title } : null;
+      } else if (/县委书记$|区委书记$|旗委书记$/.test(myTitle)) {
+        /* 县委书记 → 市委书记 */
+        const s = findSeat(/市委书记$/);
+        superior = s ? { name: s.name, title: s.title } : null;
+      } else if (/县长$|区长$|旗长$/.test(myTitle)) {
+        /* 县长/区长 → 县委书记/区委书记 */
+        const s = findSeat(/县委书记$|区委书记$/);
+        superior = s ? { name: s.name, title: s.title } : null;
+      } else if (/副省长|省委常委|省人大常委会副主任|省政协副主席/.test(myTitle)) {
+        /* 省级副职 → 省委书记 */
+        const s = findSeat(/省委书记|自治区党委书记/);
+        superior = s ? { name: s.name, title: s.title } : null;
+      } else if (/副市长|市委常委/.test(myTitle)) {
+        /* 市级副职 → 市委书记 */
+        const s = findSeat(/市委书记$/);
+        superior = s ? { name: s.name, title: s.title } : null;
+      } else if (/副区长|副县长|区委常委|县委常委/.test(myTitle)) {
+        /* 区县副职 → 区委书记/县委书记 */
+        const s = findSeat(/县委书记$|区委书记$/);
+        superior = s ? { name: s.name, title: s.title } : null;
+      } else if (!/省委书记/.test(myTitle)) {
+        /* 兜底：找职级比我高一级的 */
         let best = null;
         all.forEach(function (s) {
           if (s.name === name || !s.name) return;
@@ -2722,7 +2793,6 @@ FY.randomProvince = function (rnd) {
           if (sl > myLv && (!best || sl < best.lv)) best = { name: s.name, title: s.title, lv: sl };
         });
         if (best) superior = { name: best.name, title: best.title };
-        else if (top) superior = { name: top.name, title: top.title };
         /* 市长/县长/区长 → 同级书记 */
         if (/市长|县长|区长/.test(person.title || '')) {
           const tgt = /市/.test(person.title) ? (city + '委书记') : (area + '委书记');
